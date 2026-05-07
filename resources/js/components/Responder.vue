@@ -19,7 +19,7 @@
       <!-- Emergency Feed -->
       <div class="md:w-2/3">
         <div class="flex justify-between items-center mb-4">
-          <h2 class="text-2xl font-bold text-slate-800">Live Incident Feed</h2>
+          <h2 class="text-2xl font-bold text-slate-700">Live Incident Feed</h2>
           <f7-button v-if="alerts.length > 0" small @click="refreshAlerts" color="blue" outline>
             <f7-icon f7="arrow_clockwise" class="mr-1" size="14" /> Refresh
           </f7-button>
