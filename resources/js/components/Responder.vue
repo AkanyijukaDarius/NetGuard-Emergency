@@ -84,10 +84,10 @@
     <f7-popup :opened="popupOpened" @popup:closed="popupOpened = false" class="incident-popup">
       <div v-if="selectedAlert" class="flex flex-col h-full bg-white">
         <!-- Header -->
-        <div class="p-6 bg-slate-900 text-white flex justify-between items-start">
+        <div class="p-6 bg-[#1a5d3b] text-shadow-white flex justify-between items-start">
           <div>
-            <h2 class="text-2xl font-black uppercase tracking-tight leading-none">Incident Response</h2>
-            <p class="text-slate-400 text-xs font-bold mt-2 uppercase tracking-widest">
+            <h2 class="text-2xl text-white font-black uppercase tracking-tight leading-none">Incident Response</h2>
+            <p class="text-white text-xs font-bold mt-2 uppercase tracking-widest">
               Ref: {{ selectedAlert.incident?.incident_code || 'GUEST-TRIGGER' }}
             </p>
           </div>
