@@ -1,0 +1,16 @@
+{
+    "agents": [
+        "gemini"
+    ],
+    "cloud": false,
+    "guidelines": true,
+    "mcp": true,
+    "nightwatch_mcp": false,
+    "sail": false,
+    "skills": [
+        "laravel-best-practices",
+        "echo-vue-development",
+        "echo-development",
+        "tailwindcss-development"
+    ]
+}
