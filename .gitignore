@@ -8,6 +8,8 @@
 /.codex
 /.cursor/
 /.idea
+/.agents
+/.gemini
 /.nova
 /.phpunit.cache
 /.vscode
