@@ -18,6 +18,7 @@ class Incident extends Model
         'longitude',
         'ai_triage',
         'kyc_result',
+        'sim_swap_result',
         'qod_session_id',
         'status',
         'primary_responder_id',
@@ -27,6 +28,7 @@ class Incident extends Model
 
     protected $casts = [
         'ai_triage'   => 'array',
+        'sim_swap_result' => 'array',
         'kyc_result'  => 'array',
         'latitude'    => 'decimal:8',
         'longitude'   => 'decimal:8',

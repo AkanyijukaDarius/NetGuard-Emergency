@@ -210,7 +210,7 @@
 </template>
 
 <script setup>
-import { onMounted, inject, ref, computed } from 'vue';
+import { onMounted, inject, ref, computed,onUnmounted } from 'vue';
 import { useEmergencyStore } from '../stores/emergency';
 import { f7 } from 'framework7-vue';
 
@@ -392,8 +392,9 @@ const cancelEmergency = async (emergency) => {
     'Cancel Emergency',
     async () => {
       try {
-        await emergencyStore.cancelEmergency(emergency.id);
+        await emergencyStore.cancelEmergencyById(emergency.id);
         f7.dialog.alert('Emergency request cancelled successfully', 'Cancelled');
+        await emergencyStore.fetchMyRequests();
       } catch (error) {
         f7.dialog.alert('Failed to cancel emergency request', 'Error');
       }
@@ -410,8 +411,18 @@ const goToTriggerEmergency = () => {
   }
 };
 
+let refreshInterval = null;
+
 onMounted(async () => {
   await emergencyStore.fetchMyRequests();
+
+  refreshInterval = setInterval(() => {
+    emergencyStore.fetchMyRequests();
+  }, 30000);
+});
+
+onUnmounted(() => {
+  if (refreshInterval) clearInterval(refreshInterval);
 });
 </script>
 

@@ -6,11 +6,13 @@ import NotFound from "./pages/NotFound.vue";
 import OnboardingPage from "./pages/OnBoarding.vue";
 import Login from "./pages/Login.vue";
 import MyRequests  from "./pages/MyRequests.vue";
+import ResolvedEmergencies from "./pages/ResolvedEmergencies.vue";
 
  const routes = [
   { path: "/", component: Home },
   { path: "/report", component: Report },
   { path: "/responders", component: Responders },
+  { path: "/resolved-emergencies", component: ResolvedEmergencies },
   { path: "/my-requests", component: MyRequests },
   { path: "/settings", component: Settings },
   { path: "/onboarding", component: OnboardingPage },

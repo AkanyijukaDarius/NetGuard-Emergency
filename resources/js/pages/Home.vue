@@ -9,7 +9,6 @@
         </div>
         <f7-link class="relative" v-if="userStore.role === 'responder'" @click="userStore.resetNotificationCount">
         <f7-icon f7="bell_fill" size="24" color="white" />
-        <!-- This span 'reacts' to the userStore.unreadCount change automatically -->
         <span
             v-if="userStore.unreadCount > 0"
             class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full"

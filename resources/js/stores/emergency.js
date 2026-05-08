@@ -1,198 +1,288 @@
-import { defineStore } from 'pinia';
-import axios from 'axios';
-import { f7 } from 'framework7-vue';
-import { useUserStore } from './user';
+import { defineStore } from 'pinia'
+import axios from 'axios'
+import { f7 } from 'framework7-vue'
+import { useUserStore } from './user'
 
 export const useEmergencyStore = defineStore('emergency', {
   state: () => ({
-    currentAlert: null,
-    aiTriage: null,
-    status: 'idle',
-    loading: false,
-    error: null,
-    sessionToken: null,
-    qodActive: false,
-    activeAlerts: [],         // For Responders: list of incoming alerts
-    myRequests: [],           // For Victims: list of sent requests
-    activeListeners: [],      // Track IDs of active Echo channels to prevent duplicates
+    currentAlert:    null,
+    aiTriage:        null,
+    status:          'idle',
+    loading:         false,
+    error:           null,
+    activeAlerts:    [],   // responder feed
+    resolvedAlerts:  [],   // dispatched by this responder
+    myRequests:      [],   // victim's own alerts
+    activeListeners: [],
   }),
 
-  getters: {
-    isEmergencyActive: (state) => state.status !== 'idle' && state.currentAlert !== null,
-
-    severityColor: (state) => {
-      if (!state.aiTriage) return 'gray';
-      const colors = { critical: 'red', high: 'orange', medium: 'blue' };
-      return colors[state.aiTriage.severity] || 'green';
-    }
-  },
-
   actions: {
-    /**
-     * Fetches requests sent by the victim and sets up tracking.
-     */
+
+    // ─── Auth header helper ────────────────────────────────
+    prepareHeaders() {
+      const userStore = useUserStore()
+      if (!userStore.token) return null
+      return {
+        headers: {
+          Authorization: `Bearer ${userStore.token}`,
+          Accept:        'application/json',
+        }
+      }
+    },
+
+    // ─── Victim: fetch my own alerts ───────────────────────
     async fetchMyRequests() {
-      const userStore = useUserStore();
-      if (!userStore.token) return;
+      const config = this.prepareHeaders()
+      if (!config) return
 
-      this.loading = true;
-      this.error = null;
-
-      try {
-        const response = await axios.get('/api/my-emergencies', {
-          headers: {
-            'Authorization': `Bearer ${userStore.token}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        this.myRequests = response.data.data || response.data;
-
-        this.setupCancellationListeners();
-
-      } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to sync emergencies';
-        if (error.response?.status === 401) userStore.logout();
-      } finally {
-        this.loading = false;
-      }
-    },
-
-
-    setupCancellationListeners() {
-      if (!window.Echo) return;
-
-      this.myRequests.forEach(emergency => {
-        const isActive = !['resolved', 'cancelled'].includes(emergency.status);
-        if (isActive && !this.activeListeners.includes(emergency.id)) {
-          this.listenForCancellation(emergency.id);
+      if (this.myRequests.length === 0) {
+            this.loading = true
         }
-      });
-    },
-
-    listenForCancellation(alertId) {
-      if (!window.Echo || this.activeListeners.includes(alertId)) return;
-
       try {
-        window.Echo.channel(`emergency.${alertId}`)
-          .listen('.emergency.cancelled', (data) => {
-            this.myRequests = this.myRequests.filter(req => req.id !== alertId);
-
-            if (this.currentAlert?.id === alertId) {
-              this.reset();
-              f7.dialog.alert('Your emergency request was cancelled.', 'Alert');
-            }
-
-            this.cleanupListener(alertId);
-          })
-          .listen('.emergency.status.updated', (data) => {
-             // Handle status transitions (e.g., 'on_way')
-             if (this.currentAlert?.id === alertId) {
-               this.status = data.status;
-             }
-          });
-
-        this.activeListeners.push(alertId);
+        const response = await axios.get('/api/my-emergencies', config)
+        const data = response.data.data || response.data
+        this.myRequests = Array.isArray(data) ? data : [data]
+        this.setupCancellationListeners()
       } catch (error) {
-        console.error(`Echo subscription failed for ${alertId}:`, error);
+        if (error.response?.status === 401) useUserStore().logout()
+      } finally {
+        this.loading = false
       }
     },
 
-    /**
-     * Trigger a new emergency and immediately start listening for responders.
-     */
+    // ─── Responder: fetch active alerts ───────────────────
+    async fetchActiveAlerts() {
+      const config = this.prepareHeaders()
+        if (this.activeAlerts.length === 0) {
+            this.loading = true
+        } try {
+        const response = await axios.get('/api/emergencies/active', config)
+        this.activeAlerts = response.data.data ?? []
+      } catch (error) {
+        console.error('Fetch active alerts error:', error)
+        this.error = 'Failed to load alerts'
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // ─── Responder: fetch resolved/dispatched alerts ───────
+    async fetchResolvedAlerts() {
+      const config = this.prepareHeaders()
+     if (this.resolvedAlerts.length === 0) {
+        this.loading = true
+    }
+      try {
+        const response = await axios.get('/api/emergencies/resolved', config)
+        this.resolvedAlerts = response.data.data ?? []
+      } catch (error) {
+        console.error('Fetch resolved alerts error:', error)
+        this.error = 'Failed to load resolved alerts'
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // ─── Victim: trigger emergency ─────────────────────────
     async triggerEmergency(payload) {
-      const userStore = useUserStore();
-      this.loading = true;
-      this.error = null;
+      const config = this.prepareHeaders()
+      if (!config) return
 
+      this.loading = true
       try {
-        const response = await axios.post('/api/emergency/trigger', payload, {
-          headers: {
-            'Authorization': `Bearer ${userStore.token}`,
-            'Accept': 'application/json'
-          }
-        });
+        const response = await axios.post('/api/emergency/trigger', payload, config)
+        const alertData = response.data.alert || response.data
 
-        const alertData = response.data.alert || response.data;
+        this.currentAlert = alertData
+        this.aiTriage     = alertData.ai_triage
+        this.status       = 'pending'
 
-        this.currentAlert = alertData;
-        this.aiTriage = alertData.ai_triage;
-        this.sessionToken = alertData.session_token;
-        this.qodActive = alertData.qod_active || false;
-        this.status = 'pending';
+        const id = alertData.id || alertData.alert_id
+        if (id) this.listenForDispatch(id)
 
-        if (alertData.id || alertData.alert_id) {
-          const id = alertData.id || alertData.alert_id;
-          this.listenForCancellation(id);
-        }
-
-        return alertData;
+        return alertData
       } catch (error) {
-        this.error = error.response?.data?.message || 'Trigger failed';
-        throw error;
+        this.error = 'Trigger failed'
+        throw error
       } finally {
-        this.loading = false;
+        this.loading = false
       }
     },
 
+    // ─── Responder: dispatch to alert ──────────────────────
+    async dispatchToAlert(alertId) {
+      const config = this.prepareHeaders()
+      if (!config) return { success: false }
+
+      try {
+        const response = await axios.post(
+          `/api/emergencies/${alertId}/dispatch`,
+          {},
+          config
+        )
+
+        if (response.data.success) {
+          // Move from active → resolved locally
+          const alert = this.activeAlerts.find(a => a.id === alertId)
+          if (alert) {
+            alert.status        = 'dispatched'
+            alert.dispatched_at = new Date().toISOString()
+            alert.responder_name = response.data.responder ?? null
+            this.resolvedAlerts.unshift(alert)
+            this.activeAlerts = this.activeAlerts.filter(a => a.id !== alertId)
+          }
+
+          return { success: true, responder: response.data.responder }
+        }
+
+        return { success: false }
+
+      } catch (error) {
+        console.error('Dispatch error:', error)
+        this.error = 'Dispatch failed'
+        return { success: false }
+      }
+    },
+
+    // ─── Victim: cancel alert ─────────────────────────────
+    async cancelAlert(alertId) {
+      const config = this.prepareHeaders()
+      if (!config) return false
+
+      try {
+        await axios.post(`/api/emergencies/${alertId}/cancel`, {}, config)
+        this.myRequests = this.myRequests.filter(r => r.id !== alertId)
+        if (this.currentAlert?.id === alertId) {
+          this.currentAlert = null
+          this.status       = 'idle'
+        }
+        this.cleanupListener(alertId)
+        return true
+      } catch (error) {
+        console.error('Cancel error:', error)
+        return false
+      }
+    },
+
+    // ─── Listeners init ────────────────────────────────────
     initializeListener() {
-      const userStore = useUserStore();
+      const userStore = useUserStore()
 
       if (userStore.isResponder) {
-        this.initializeResponderListener();
+        this.initializeResponderListener()
+        this.fetchActiveAlerts()
       }
 
       if (userStore.isAuthenticated) {
-        this.fetchMyRequests();
+        this.fetchMyRequests()
       }
-
-      console.log("Emergency listeners initialized.");
     },
 
+    destroyListener() {
+      if (!window.Echo) return
+      window.Echo.leaveChannel('emergency-channel')
+      window.Echo.leaveChannel('responder.alerts')
+      this.activeListeners.forEach(id => this.cleanupListener(id))
+    },
 
+    // ─── Responder: listen for new incoming alerts ─────────
     initializeResponderListener() {
-      if (!window.Echo) return;
+      if (!window.Echo) return
 
       window.Echo.channel('emergency-channel')
         .listen('.emergency.triggered', (data) => {
-          this.activeAlerts.unshift(data.alert);
-          this.notifyResponder(data);
-        });
+          // Avoid duplicates
+          const exists = this.activeAlerts.find(a => a.id === data.alert?.id)
+          if (!exists) this.activeAlerts.unshift(data.alert)
+
+          const userStore = useUserStore()
+          userStore.triggerSiren?.()
+
+          f7.notification.create({
+            icon:         '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
+            title:        'NEW EMERGENCY',
+            subtitle:     `${data.alert?.ai_triage?.severity?.toUpperCase() ?? 'URGENT'} Priority`,
+            text:         `Incident: ${data.alert?.incident?.type ?? 'Incoming Request'}`,
+            closeButton:  true,
+            closeTimeout: 5000,
+          }).open()
+        })
+
+      // Listen for cancellations from victims
+      window.Echo.channel('responder.alerts')
+        .listen('.emergency.cancelled', (data) => {
+          this.activeAlerts = this.activeAlerts.filter(a => a.id !== data.alert_id)
+
+          f7.notification.create({
+            title:        'Alert Cancelled',
+            text:         `Incident #${data.alert_id} was cancelled by the victim.`,
+            closeTimeout: 3000,
+          }).open()
+        })
     },
 
-    notifyResponder(data) {
-      f7.notification.create({
-        icon: '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
-        title: 'NEW EMERGENCY',
-        subtitle: `${data.alert?.ai_triage?.severity?.toUpperCase() || 'URGENT'} Priority`,
-        text: `Condition: ${data.alert?.ai_triage?.likely_condition || 'Incoming Incident'}`,
-        closeButton: true,
-        closeTimeout: 5000,
-      }).open();
+    // ─── Victim: listen for responder coming ──────────────
+    listenForDispatch(alertId) {
+      if (!window.Echo || this.activeListeners.includes(alertId)) return
 
-      const audio = new Audio('/assets/siren.mp3');
-      audio.play().catch(() => console.warn("Audio interaction required"));
+      window.Echo.private(`emergency.${alertId}`)
+        .listen('.responder.coming', (data) => {
+          if (this.currentAlert) {
+            this.currentAlert.responder_name = data.responderName
+            this.currentAlert.status         = 'dispatched'
+          }
+          this.status = 'dispatched'
+
+          f7.notification.create({
+            icon:         '<i class="f7-icons text-green-600">checkmark_shield_fill</i>',
+            title:        'Help is on the way!',
+            subtitle:     `Responder: ${data.responderName}`,
+            text:         'A responder has been dispatched to your location.',
+            closeTimeout: 6000,
+          }).open()
+        })
+
+      this.activeListeners.push(alertId)
     },
 
+    // ─── Victim: cancellation listeners ───────────────────
+    setupCancellationListeners() {
+      if (!window.Echo) return
+      this.myRequests.forEach(emergency => {
+        const isActive = !['resolved', 'cancelled'].includes(emergency.status)
+        if (isActive && !this.activeListeners.includes(emergency.id)) {
+          this.listenForCancellation(emergency.id)
+        }
+      })
+    },
+
+    listenForCancellation(alertId) {
+      if (!window.Echo || this.activeListeners.includes(alertId)) return
+
+      window.Echo.channel(`emergency.${alertId}`)
+        .listen('.emergency.cancelled', () => {
+          this.myRequests = this.myRequests.filter(r => r.id !== alertId)
+          if (this.currentAlert?.id === alertId) this.reset()
+          this.cleanupListener(alertId)
+        })
+
+      this.activeListeners.push(alertId)
+    },
 
     cleanupListener(alertId) {
-      if (window.Echo) {
-        window.Echo.leaveChannel(`emergency.${alertId}`);
-        this.activeListeners = this.activeListeners.filter(id => id !== alertId);
-      }
+      if (!window.Echo) return
+      window.Echo.leaveChannel(`emergency.${alertId}`)
+      this.activeListeners = this.activeListeners.filter(id => id !== alertId)
     },
 
-   
     reset() {
-      this.activeListeners.forEach(id => this.cleanupListener(id));
-
-      this.currentAlert = null;
-      this.aiTriage = null;
-      this.status = 'idle';
-      this.sessionToken = null;
-      this.qodActive = false;
-      this.loading = false;
-    }
-  }
-});
+      this.activeListeners.forEach(id => this.cleanupListener(id))
+      this.currentAlert   = null
+      this.activeAlerts   = []
+      this.myRequests     = []
+      this.resolvedAlerts = []
+      this.status         = 'idle'
+      this.error          = null
+    },
+  },
+})

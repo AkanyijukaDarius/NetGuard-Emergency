@@ -39,5 +39,6 @@ return [
         'host' => env('NOKIA_RAPIDAPI_HOST'),
         'base_url' => env('NOKIA_BASE_URL'),
     ],
+    'groq' => ['api_key' => env('GROQ_API_KEY')],
 
 ];

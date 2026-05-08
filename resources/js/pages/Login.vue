@@ -52,8 +52,9 @@ import { ref, onMounted } from 'vue';
 import { f7 } from 'framework7-vue';
 import axios from 'axios';
 import { useUserStore } from '../stores/user';
-
+import { useEmergencyStore } from '../stores/emergency';
 const userStore = useUserStore();
+const emergencyStore = useEmergencyStore();
 const loginPhone = ref('');
 
 onMounted(() => {
@@ -83,7 +84,7 @@ const handleLogin = async () => {
       userStore.startPolling();
 
       if (userStore.role === 'responder') {
-        userStore.initRealTimeListener();
+        emergencyStore.initializeListener();
       }
 
       f7.views.main.router.navigate('/', {

@@ -38,11 +38,11 @@
           />
           <f7-link
             v-if="userStore.role === 'responder'"
-            href="/notifications"
+            href="/resolved-emergencies"
             tab-link
-            :tab-link-active="currentPath === '/notifications'"
-            text="Notifications"
-            icon-f7="bell_fill"
+            :tab-link-active="currentPath === '/resolved-emergencies'"
+            text="Resolved Emergencies"
+            icon-f7="checkmark_circle_fill"
           />
           <f7-link
             href="/settings"
@@ -120,7 +120,7 @@ onMounted(() => {
 }
 
 .custom-tabbar .tab-link-active {
-  background-color: #e8f5e9 !important; 
+  background-color: #e8f5e9 !important;
   margin-left: 6px !important;
   margin-right: 6px !important;
 }

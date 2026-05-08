@@ -9,19 +9,16 @@ use Illuminate\Support\Facades\Log;
 
 class AiTriageService
 {
-    protected $apiKey;
+    protected string|null $apiKey;
 
     public function __construct()
     {
-        $this->apiKey = env('GROQ_API_KEY');
-    }
+        $this->apiKey = config('services.groq.api_key');    }
 
     /**
      * Perform AI Triage using Groq
      */
-    public function triage(string $symptoms, string $locationType = 'rural', ?array $networkLocation = null)
-    {
-        // If no API key, use fallback immediately
+    public function triage(string $symptoms, string $locationType = 'rural', ?array $networkLocation = null, bool $isHighRiskIdentity = false)    {
         if (empty($this->apiKey)) {
             return $this->fallbackTriage($symptoms);
         }
@@ -32,7 +29,9 @@ Village Health Teams (VHT) are often the fastest first responders in villages.";
 
         $userPrompt = "Analyze this emergency:\n"
             . "Symptoms: " . ($symptoms ?: "Unknown medical issue") . "\n"
-            . "Location type: " . $locationType . "\n\n"
+            . "Location type: " . $locationType . "\n"
+            . "Security Alert: " . ($isHighRiskIdentity ? "HIGH RISK" : "SECURE") . "\n"
+            . "Network Location: " . ($networkLocation ? json_encode($networkLocation) : "Unavailable") . "\n\n"
             . "Return ONLY a valid JSON object with this structure:\n"
             . "{
                 \"severity\": \"low|medium|high|critical\",

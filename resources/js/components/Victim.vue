@@ -7,6 +7,7 @@
 
         <div class="relative z-10 text-center">
           <f7-button
+            v-if="!emergencyStore.isEmergencyActive"
             large
             fill
             round
@@ -48,13 +49,16 @@
     <!-- 3. Network Intelligence Status -->
     <f7-block-title class="font-bold text-gray-700">Network Intelligence Status</f7-block-title>
     <div class="grid grid-cols-2 gap-4 px-4 pb-12">
-      <div class="bg-slate-50 p-5 rounded-2xl border border-gray-100 flex items-center space-x-3">
-        <f7-icon f7="antenna_radiowaves_left_right" size="22" color="teal" />
-        <div>
-          <p class="text-[10px] text-gray-500">Signal Priority</p>
-          <p class="font-bold text-xs text-[#1a5d3b]">QoD Boost Active</p>
-        </div>
-      </div>
+    <div class="bg-slate-50 p-5 rounded-2xl border border-gray-100 flex items-center space-x-3">
+    <f7-icon f7="antenna_radiowaves_left_right" size="22"
+            :color="emergencyStore.qodActive ? 'red' : 'teal'" />
+    <div>
+        <p class="text-[10px] text-gray-500">Signal Priority</p>
+        <p class="font-bold text-xs" :class="emergencyStore.qodActive ? 'text-red-600' : 'text-[#1a5d3b]'">
+        {{ emergencyStore.qodActive ? 'QoD Boost Active' : 'Standard Priority' }}
+        </p>
+    </div>
+    </div>
 
       <div class="bg-slate-50 p-5 rounded-2xl border border-gray-100 flex items-center space-x-3">
         <f7-icon f7="location_fill" size="22" color="teal" />
@@ -128,11 +132,15 @@ const handleTrigger = (symptomType) => {
   );
 };
 
+
 onMounted(async () => {
   await nextTick();
 
   const mapContainer = document.getElementById('map');
-  if (mapContainer && !mapInstance.value) {
+
+  if (!mapContainer || mapInstance.value) return;
+
+  try {
     mapInstance.value = L.map('map', {
       zoomControl: false,
       attributionControl: false
@@ -142,25 +150,25 @@ onMounted(async () => {
       maxZoom: 19,
     }).addTo(mapInstance.value);
 
-    L.circle([0.3476, 32.5825], {
-      color: '#1a5d3b',
-      fillColor: '#1a5d3b',
-      fillOpacity: 0.3,
-      radius: 150
-    }).addTo(mapInstance.value);
-
     setTimeout(() => {
-      if (mapInstance.value) mapInstance.value.invalidateSize();
-    }, 400);
+      mapInstance.value?.invalidateSize();
+    }, 200);
+
+  } catch (err) {
+    console.error("Leaflet Init Error:", err);
   }
 });
 
 onBeforeUnmount(() => {
   if (mapInstance.value) {
+    mapInstance.value.off();
     mapInstance.value.remove();
     mapInstance.value = null;
   }
 });
+
+
+
 </script>
 
 <style scoped>

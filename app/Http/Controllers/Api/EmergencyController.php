@@ -12,8 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Events\EmergencyTriggered;
 use App\Events\EmergencyCancelled;
+use App\Events\ResponderDispatched;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
@@ -30,365 +30,277 @@ class EmergencyController extends Controller
     }
 
     /**
-     * Main Endpoint: Trigger Emergency Alert (Anonymous + Network Intelligence)
+     * AUTH: Register Responder or User
      */
-    /**
- * Main Endpoint: Trigger Emergency Alert (Anonymous + Network Intelligence)
- */
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'phone' => 'required|string|unique:users,phone',
+            'given_name' => 'required|string',
+            'family_name' => 'required|string',
+            'id_document' => 'nullable|string',
+            'role' => 'required|string|in:user,responder',
+            'responder_code' => 'required_if:role,responder|nullable|string',
+        ]);
 
-// Update your Register Method
-public function register(Request $request)
-{
-    $validated = $request->validate([
-        'phone' => 'required|string|unique:users,phone',
-        'given_name' => 'required|string',
-        'family_name' => 'required|string',
-        'id_document' => 'nullable|string',
-        'role' => 'required|string|in:user,responder',
-        'responder_code' => 'required_if:role,responder|nullable|string',
-    ]);
-
-    if ($validated['role'] === 'responder' && $validated['responder_code'] !== 'NET-2026') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid authorization code for emergency responders.'
-            ], 403);
+        if ($validated['role'] === 'responder' && $validated['responder_code'] !== 'NET-2026') {
+            return response()->json(['success' => false, 'message' => 'Invalid responder authorization code.'], 403);
         }
 
-    $user = User::create([
-        'phone' => $validated['phone'],
-        'given_name' => $validated['given_name'],
-        'family_name' => $validated['family_name'],
-        'id_document' => $validated['id_document'],
-        'role' => $validated['role'],
-        'name' => $validated['given_name'] . ' ' . $validated['family_name'],
-        'email' => $validated['phone'] . '@netguardemergency.com',
-        'password' => Hash::make($validated['phone']),
-    ]);
+        $user = User::create([
+            'phone' => $validated['phone'],
+            'given_name' => $validated['given_name'],
+            'family_name' => $validated['family_name'],
+            'id_document' => $validated['id_document'],
+            'role' => $validated['role'],
+            'name' => $validated['given_name'] . ' ' . $validated['family_name'],
+            'email' => $validated['phone'] . '@netguard.com',
+            'password' => Hash::make($validated['phone']),
+        ]);
 
-    // Generate token
-    $token = $user->createToken('netguard_token')->plainTextToken;
+        return response()->json([
+            'success' => true,
+            'token' => $user->createToken('netguard_token')->plainTextToken,
+            'user' => $user
+        ], 201);
+    }
 
-    return response()->json([
-        'success' => true,
-        'token' => $token,
-        'user' => [
-            'phone' => $user->phone,
-            'given_name' => $user->given_name,
-            'family_name' => $user->family_name,
-            'role' => $user->role,
-        ]
-    ], 201);
-}
-
-
+    /**
+ * AUTH: Login existing User or Responder
+ */
 public function login(Request $request)
 {
-    $request->validate(['phone' => 'required|string']);
-
-    $user = \App\Models\User::where('phone', $request->phone)->first();
-
-    if ($user) {
-        $token = $user->createToken('netguard_token')->plainTextToken;
-
-        return response()->json([
-            'success' => true,
-            'token' => $token,
-            'user' => [
-                'phone' => $user->phone,
-                'given_name' => $user->given_name,
-                'family_name' => $user->family_name,
-                'role' => $user->role,
-                'is_kyc_verified' => (bool) $user->is_kyc_verified,
-                'id_document' => $user->id_document,
-            ]
-        ]);
+    if (!$request->has('password') && $request->has('phone')) {
+        $request->merge(['password' => $request->phone]);
     }
 
-    return response()->json(['success' => false, 'message' => 'Not registered.'], 404);
-}
-
-
-public function verifyKyc(Request $request)
-{
-    $user = $request->user();
-
-    $response = Http::withHeaders([
-        'x-rapidapi-host' => 'network-as-code.nokia.rapidapi.com',
-        'x-rapidapi-key'  => config('services.nokia.api_key'),
-    ])->post(config('services.nokia.base_url') . '/passthrough/camara/v1/kyc-match/kyc-match/v0.3/match', [
-        'device' => ['phoneNumber' => $user->phone],
-        'idDocument' => $user->id_document,
-        'givenName'  => $user->given_name,
-        'familyName' => $user->family_name,
+    $validated = $request->validate([
+        'phone' => 'required|string',
+        'password' => 'required|string',
     ]);
 
-    $result = $response->json();
+    $user = User::where('phone', $validated['phone'])->first();
 
-    $idMatches = isset($result['idDocumentMatch']) && $result['idDocumentMatch'] === "true";
+    if (!$user) {
+        return response()->json(['success' => false, 'message' => 'User not found.'], 401);
+    }
 
-    if ($response->successful() && $idMatches) {
-        $user->update(['is_kyc_verified' => 1]); //
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Identity Verified via ID Document!'
-        ]);
+    try {
+        if (!Hash::check($validated['password'], $user->password)) {
+            return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
+        }
+    } catch (\RuntimeException $e) {
+        if ($validated['password'] === $user->password) {
+            $user->password = Hash::make($validated['password']);
+            $user->save();
+        } else {
+            return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
+        }
     }
 
     return response()->json([
-        'success' => false,
-        'message' => 'ID Verification Failed.',
-        'debug' => $result
-    ], 422);
+        'success' => true,
+        'token' => $user->createToken('netguard_token')->plainTextToken,
+        'user' => $user
+    ]);
 }
 
+    /**
+     * MAIN: Trigger Emergency (Nokia CAMARA + AI Triage)
+     */
 public function trigger(Request $request)
 {
-    // 1. Match the Nokia/CAMARA naming convention in validation
     $request->validate([
-        'phoneNumber' => 'required|string|max:15', // Changed from 'phone'
-        'givenName'   => 'required|string',        // Changed from 'given_name'
-        'familyName'  => 'required|string',       // Changed from 'family_name'
-        'idDocument'  => 'nullable|string',       // Matches Nokia requirement
-        'symptoms'    => 'nullable|string|max:500',
-        'latitude'    => 'nullable|numeric',
-        'longitude'   => 'nullable|numeric',
+        'phoneNumber' => 'required|string',
+        'givenName'   => 'required|string',
+        'familyName'  => 'required|string',
+        'latitude'    => 'required|numeric',
+        'longitude'   => 'required|numeric',
+        'symptoms'    => 'nullable|string',
     ]);
 
-    // Use the Nokia key for internal variable assignment
     $phone = $request->phoneNumber;
-    Log::info("Received emergency trigger from phone: {$phone}");
 
-    // ========================
-    // 1. KYC Match (Using Nokia Keys)
-    // ========================
-    $kycResult = null;
-    if ($request->phoneNumber && ($request->givenName || $request->familyName || $request->idDocument)) {
-        $attributes = [
-            'givenName'  => $request->givenName,
-            'familyName' => $request->familyName,
-            'idDocument' => $request->idDocument,
-        ];
-        // CamaraService now gets exactly what it needs
-        $kycResult = $this->camara->kycMatch($phone, $attributes);
-            Log::info("KYC Match result for {$phone}: " . json_encode($kycResult));
+    //  Security Check: SIM Swap Risk
+    $simSwapData = $this->camara->getSimSwapDate($phone);
+    $isHighRisk = false;
+    if (isset($simSwapData['latestSimSwapDate'])) {
+        $isHighRisk = \Carbon\Carbon::parse($simSwapData['latestSimSwapDate'])->diffInHours(now()) < 48;
     }
 
-    // ========================
-    // 2. CAMARA Network APIs (Remains same)
-    // ========================
     $networkLocation = $this->camara->getDeviceLocation($phone);
-    $reachability    = $this->camara->getReachabilityStatus($phone);
-    $qodSession      = $this->camara->createQoDSession($phone, 'DOWNLINK_M_UPLINK_L', 600);
+    $reachabilityData = $this->camara->getReachabilityStatus($phone);
+    $isReachable = data_get($reachabilityData, 'result.reachable', false);
+    $connectivity = data_get($reachabilityData, 'result.connectivity', []);
+    $hasData = in_array('DATA', $connectivity);
 
-    // ========================
-    // 3. AI Triage & 4. Create Incident (Remains same)
-    // ========================
-    $triageResult = $this->aiTriage->triage(
-        $request->symptoms ?? 'Medical Emergency',
-        'rural',
-        $networkLocation
-    );
+    // AI Triage
+    $triageResult = $this->aiTriage->triage($request->symptoms, 'urban', $networkLocation, $isHighRisk);
 
     $incident = Incident::create([
-        'incident_code'  => 'NG-' . now()->format('Ymd-His'),
-        'type'           => $triageResult['likely_condition'] ?? 'Emergency',
-        'severity'       => $triageResult['severity'] ?? 'medium',
-        'description'    => $request->symptoms,
-        'latitude'       => $request->latitude,
-        'longitude'      => $request->longitude,
-        'ai_triage'      => $triageResult,
-        'kyc_result'     => $kycResult,
-        'qod_session_id' => $qodSession['sessionId'] ?? null,
-        'status'         => 'open',
+        'incident_code'   => 'NG-' . now()->format('Ymd-His'),
+        'type'            => $triageResult['likely_condition'] ?? 'Emergency',
+        'severity'        => $triageResult['severity'] ?? 'medium',
+        'description'     => $request->symptoms,
+        'latitude'        => $request->latitude,
+        'longitude'       => $request->longitude,
+        'ai_triage'       => $triageResult,
+        'sim_swap_result' => $simSwapData,
+        'status'          => 'open',
     ]);
 
-    // ========================
-    // 5. Create Emergency Alert (MAP Nokia Keys to DB Columns)
-    $user = Auth::user();
-    // ========================
     $alert = EmergencyAlert::create([
-        'incident_id'      => $incident->id,
-        'user_id'          => $user ? $user->id : null,
-        'phone'            => $phone, // FIX: Use the variable defined at the top ($request->phoneNumber)
-        'givenName'        => $request->givenName,
-        'familyName'       => $request->familyName,
-        'idDocument'       => $request->idDocument,
-        'latitude'         => $request->latitude, // Ensure these match your validation keys
-        'longitude'        => $request->longitude,
-        'network_location' => $networkLocation,
-        'symptoms'         => $request->symptoms,
-        'status'           => 'pending',
-        'session_token'    => $sessionToken ?? null,
-        'is_anonymous'     => $request->is_anonymous ?? false,
+        'incident_id'         => $incident->id,
+        'user_id'             => Auth::id(),
+        'phone'               => $phone,
+        'givenName'           => $request->givenName,
+        'familyName'          => $request->familyName,
+        'latitude'            => $request->latitude,
+        'longitude'           => $request->longitude,
+        'network_location'    => $networkLocation,
+        'status'              => 'pending',
+        'session_token'       => Str::uuid(),
+        'reachability_status' => ($isReachable && $hasData) ? 'data' : 'sms',
+        'connectivity_type'   => $connectivity[0] ?? 'OFFLINE',
     ]);
 
-        Log::info('Emergency alert created', [
-            'alert_id' => $alert->id,
-            'user_id' => $alert->user_id,
-            'phone' => $alert->phone
+    broadcast(new EmergencyTriggered($alert, $incident, $triageResult))->toOthers();
+
+    return response()->json(['success' => true, 'alert_id' => $alert->id], 201);
+}
+   //active alerts
+public function active()
+{
+    $currentResponder = Auth::user();
+    $rLocRaw = $this->camara->getDeviceLocation($currentResponder->phone);
+    $rLoc = is_string($rLocRaw) ? json_decode($rLocRaw, true) : (array) $rLocRaw;
+
+    $rLat = data_get($rLoc, 'result.area.center.latitude') ?? data_get($rLoc, 'area.center.latitude');
+    $rLng = data_get($rLoc, 'result.area.center.longitude') ?? data_get($rLoc, 'area.center.longitude');
+
+    $alerts = EmergencyAlert::whereIn('status', ['pending', 'dispatched', 'on_way'])
+        ->with(['incident', 'responder'])
+        ->latest()
+        ->get()
+        ->map(function ($alert) use ($rLat, $rLng) {
+            $alertData = $alert->toArray();
+
+            $alertData['incident'] = $alert->incident;
+            $alertData['responder'] = $alert->responder;
+
+            $alertData['responder_api_lat'] = $rLat;
+            $alertData['responder_api_lng'] = $rLng;
+
+            $vLoc = $alert->network_location;
+
+            $alertData['victim_lat'] = data_get($vLoc, 'result.area.center.latitude')
+                              ?? data_get($vLoc, 'area.center.latitude')
+                              ?? $alert->latitude;
+
+            $alertData['victim_lng'] = data_get($vLoc, 'result.area.center.longitude')
+                              ?? data_get($vLoc, 'area.center.longitude')
+                              ?? $alert->longitude;
+
+            $alertData['accuracy_radius'] = data_get($vLoc, 'result.area.radius')
+                                   ?? data_get($vLoc, 'area.radius')
+                                   ?? 15;
+
+            return $alertData;
+        });
+
+    return response()->json(['success' => true, 'data' => $alerts]);
+}
+
+
+
+    /**
+     * RESPONDER: Dispatch to Incident
+     */
+    public function dispatchAlert(Request $request, $id)
+    {
+        $alert = EmergencyAlert::findOrFail($id);
+        $responder = Auth::user();
+
+        $alert->update([
+            'status' => 'dispatched',
+            'responder_id' => $responder->id,
         ]);
 
-// In EmergencyController trigger method
-try {
-    // Attempt real-time broadcast
-    broadcast(new \App\Events\EmergencyTriggered($alert, $incident, $triageResult))->toOthers();
-} catch (\Exception $e) {
-    Log::error("Real-time broadcast failed: " . $e->getMessage());
+        broadcast(new ResponderDispatched($alert, $responder))->toOthers();
 
-    // 2. FALLBACK: Send SMS to all 'responder' role users
-    // As a math major, think of this as broadcasting to the subset of Responders
-    $responders = \App\Models\User::where('role', 'responder')->get();
-
-    foreach ($responders as $responder) {
-        $this->smsService->send(
-            $responder->phone,
-            "NETGUARD ALERT: {$incident->type} reported. Please check the app for location details."
-        );
-    }
-}
-    return response()->json([
-        'success' => true,
-        'alert_id' => $alert->id,
-        'kyc_status' => $kycResult ? 'processed' : 'skipped',
-        'message' => 'Emergency alert sent successfully!'
-    ], 201);
-}
-
-    /**
-     * Get Active Emergencies (For Responder Dashboard)
-     */
-    public function active()
-    {
-        $alerts = EmergencyAlert::whereIn('status', ['pending', 'dispatched', 'on_way'])
-            ->with(['incident', 'responder'])
-            ->latest()
-            ->get();
-
-        return response()->json(['data' => $alerts]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Victim notified.',
+            'responder_name' => $responder->given_name
+        ]);
     }
 
-    /**
- * Dispatch Responder to Alert
- */
-public function dispatchAlert(Request $request, $id)
+    //resolved/dispatched alerts
+  public function resolved()
 {
-    $alert = EmergencyAlert::findOrFail($id);
-    $responder = $request->user(); // Authenticated responder
+    $alerts = EmergencyAlert::where('status', 'dispatched')
+        ->where('responder_id', Auth::id())
+        ->with(['incident'])
+        ->latest('updated_at')
+        ->get()
+        ->map(function ($alert) {
+            $alertData = $alert->toArray();
+            $alertData['incident'] = $alert->incident;
 
-    $alert->update([
-        'status' => 'dispatched',
-        'responder_id' => $responder->id,
-    ]);
+            $vLoc = $alert->network_location;
 
-    // THE HANDSHAKE
-    try {
-        // This triggers the responder.coming event on the private channel
-        broadcast(new \App\Events\ResponderDispatched($alert, $responder))->toOthers();
-    } catch (\Exception $e) {
-        Log::error("Handshake broadcast failed: " . $e->getMessage());
-    }
+            $alertData['victim_lat'] = data_get($vLoc, 'result.area.center.latitude')
+                              ?? data_get($vLoc, 'area.center.latitude')
+                              ?? $alert->latitude;
 
-    return response()->json([
-        'success' => true,
-        'message' => 'Victim notified.',
-        'responder' => $responder->given_name // matches responderName in Pinia
-    ]);
+            $alertData['victim_lng'] = data_get($vLoc, 'result.area.center.longitude')
+                              ?? data_get($vLoc, 'area.center.longitude')
+                              ?? $alert->longitude;
+
+            $alertData['accuracy_radius'] = data_get($vLoc, 'result.area.radius')
+                                   ?? data_get($vLoc, 'area.radius')
+                                   ?? 15;
+
+            return $alertData;
+        });
+
+    return response()->json(['success' => true, 'data' => $alerts]);
 }
 
-public function getMyRequests() {
-    $userId = Auth::id();
 
-    Log::info("Fetching secured requests for User ID: " . $userId);
+
+public function getMyRequests()
+{
+    $user = Auth::user();
+
+    if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+    }
 
     $requests = EmergencyAlert::with(['incident', 'responder'])
-        ->where('user_id', $userId)
+        ->where('phone', $user->phone)
         ->latest()
         ->get();
 
-    return response()->json($requests);
+    return response()->json([
+        'success' => true,
+        'data' => $requests
+    ]);
 }
 
- /**
-     * Cancel an emergency alert
+    /**
+     * VICTIM: Cancel Alert
      */
     public function cancelEmergency(Request $request, $id)
     {
-        try {
-            DB::beginTransaction();
+        $alert = EmergencyAlert::where('id', $id)->where('user_id', Auth::id())->first();
 
-            // Find the alert belonging to the authenticated user
-            $alert = EmergencyAlert::where('id', $id)
-                ->where('user_id', Auth::id())
-                ->whereNull('deleted_at')
-                ->first();
-
-            if (!$alert) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Emergency alert not found'
-                ], 404);
-            }
-
-            // Check if alert can be cancelled
-            if (!$alert->canBeCancelled()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This emergency cannot be cancelled because it is already ' . $alert->status
-                ], 400);
-            }
-
-            // Store responder info before deletion
-            $responderId = $alert->responder_id;
-            $responder = $responderId ? User::find($responderId) : null;
-
-            // Update alert status
-            $alert->status = 'cancelled';
-            $alert->cancelled_at = now();
-            $alert->cancelled_by = Auth::id();
-            $alert->save();
-
-            // Broadcast cancellation event to all listeners
-            try {
-                broadcast(new EmergencyCancelled($alert, 'victim'))->toOthers();
-                Log::info("Cancellation event broadcast for alert {$alert->id}");
-            } catch (\Exception $e) {
-                Log::warning("Failed to broadcast cancellation: " . $e->getMessage());
-            }
-
-            // If responder was assigned, log the notification
-            if ($responder) {
-                Log::info("Responder {$responder->id} ({$responder->given_name}) notified about cancellation of alert {$alert->id}");
-
-                // You can add push notification or SMS here
-                // $responder->notify(new EmergencyCancelledNotification($alert));
-            }
-
-            // Delete the alert from database (soft delete)
-            $alert->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Emergency request cancelled successfully',
-                'data' => [
-                    'alert_id' => $alert->id,
-                    'status' => 'cancelled'
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error cancelling emergency: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to cancel emergency request: ' . $e->getMessage()
-            ], 500);
+        if ($alert) {
+            $alert->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+            broadcast(new EmergencyCancelled($alert))->toOthers();
+            return response()->json(['success' => true]);
         }
-    }
 
+        return response()->json(['success' => false], 404);
+    }
 }

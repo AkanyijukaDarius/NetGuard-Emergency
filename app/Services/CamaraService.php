@@ -65,6 +65,20 @@ class CamaraService
         return $this->safePost("/passthrough/camara/v1/kyc-match/kyc-match/v0.3/match", $payload);
     }
 
+    /**
+ * 5. SIM Swap Check
+ * Retrieves the latest date of a SIM swap to assess identity risk.
+ */
+public function getSimSwapDate(string $phoneNumber)
+{
+    $payload = ['phoneNumber' => $phoneNumber];
+
+    $result = $this->safePost("/passthrough/camara/v1/sim-swap/sim-swap/v0/retrieve-date", $payload);
+
+    Log::info("SIM Swap API called for {$phoneNumber}", ['result' => $result]);
+    return ($result['_internal_success']) ? $result : null;
+}
+
     // 2. Device Location
     public function getDeviceLocation(string $phoneNumber, int $maxAge = 60)
     {
