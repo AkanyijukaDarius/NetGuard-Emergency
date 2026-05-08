@@ -132,4 +132,42 @@ public function getSimSwapDate(string $phoneNumber)
 
     return ($result['_internal_success']) ? $result : null;
 }
+
+// ─── Delete QoD Session ──────────────────────────────────
+public function deleteQoDSession(string $sessionId): bool
+{
+    if (empty($sessionId)) return false;
+
+    try {
+        $response = Http::withHeaders([
+            'X-RapidAPI-Key'  => $this->apiKey,
+            'X-RapidAPI-Host' => $this->host,
+            'Accept'          => 'application/json',
+        ])
+        ->timeout(5)
+        ->delete($this->baseUrl . "/quality-on-demand/v1/sessions/{$sessionId}");
+
+        if ($response->successful() || $response->status() === 204) {
+            Log::info("QoD session deleted: {$sessionId}");
+            return true;
+        }
+
+        if ($response->status() === 404) {
+            Log::info("QoD session already gone: {$sessionId}");
+            return true;
+        }
+
+        Log::warning("QoD delete failed", [
+            'session_id' => $sessionId,
+            'status'     => $response->status(),
+            'body'       => $response->body(),
+        ]);
+
+        return false;
+
+    } catch (\Exception $e) {
+        Log::error("QoD delete exception: " . $e->getMessage());
+        return false;
+    }
+}
 }

@@ -109,60 +109,90 @@ export const useEmergencyStore = defineStore('emergency', {
       }
     },
 
-    // ─── Responder: dispatch to alert ──────────────────────
     async dispatchToAlert(alertId) {
-      const config = this.prepareHeaders()
-      if (!config) return { success: false }
+        const config = this.prepareHeaders()
+        if (!config) return { success: false }
 
-      try {
-        const response = await axios.post(
-          `/api/emergencies/${alertId}/dispatch`,
-          {},
-          config
-        )
+        try {
+            const response = await axios.post( `/api/emergencies/${alertId}/dispatch`,{}, config)
 
-        if (response.data.success) {
-          // Move from active → resolved locally
-          const alert = this.activeAlerts.find(a => a.id === alertId)
-          if (alert) {
-            alert.status        = 'dispatched'
-            alert.dispatched_at = new Date().toISOString()
-            alert.responder_name = response.data.responder ?? null
-            this.resolvedAlerts.unshift(alert)
-            this.activeAlerts = this.activeAlerts.filter(a => a.id !== alertId)
-          }
+            if (response.data.success) {
+            const {
+                responder,
+                victim_phone,
+                needs_sms,
+                incident_type,
+                alert_id,
+            } = response.data
 
-          return { success: true, responder: response.data.responder }
+            const alert = this.activeAlerts.find(a => a.id === alertId)
+            if (alert) {
+                alert.status         = 'dispatched'
+                alert.dispatched_at  = new Date().toISOString()
+                alert.responder_name = responder ?? null
+                this.resolvedAlerts.unshift(alert)
+                this.activeAlerts = this.activeAlerts.filter(a => a.id !== alertId)
+            }
+
+            if (needs_sms && victim_phone) {
+                const message = encodeURIComponent(
+                `NETGUARD EMERGENCY\n` +
+                `Your ${incident_type} alert (#${alert_id}) has been received.\n` +
+                `Responder ${responder} is on the way to you.\n` +
+                `Stay calm and remain at your location.\n` +
+                `Help is coming.`
+                )
+                window.open(`sms:${victim_phone}?body=${message}`, '_system')
+            }
+
+            return {
+                success:      true,
+                responder,
+                needs_sms:    needs_sms ?? false,
+                victim_phone,
+                alert_type:   incident_type,
+                alert_id,
+            }
+            }
+
+            return { success: false }
+
+        } catch (error) {
+            console.error('Dispatch error:', error)
+            this.error = 'Dispatch failed'
+            return { success: false }
         }
-
-        return { success: false }
-
-      } catch (error) {
-        console.error('Dispatch error:', error)
-        this.error = 'Dispatch failed'
-        return { success: false }
-      }
-    },
+        },
 
     // ─── Victim: cancel alert ─────────────────────────────
-    async cancelAlert(alertId) {
-      const config = this.prepareHeaders()
-      if (!config) return false
+async cancelEmergencyById(alertId) {
+  const config = this.prepareHeaders()
+  if (!config) return false
 
-      try {
-        await axios.post(`/api/emergencies/${alertId}/cancel`, {}, config)
-        this.myRequests = this.myRequests.filter(r => r.id !== alertId)
-        if (this.currentAlert?.id === alertId) {
-          this.currentAlert = null
-          this.status       = 'idle'
-        }
-        this.cleanupListener(alertId)
-        return true
-      } catch (error) {
-        console.error('Cancel error:', error)
-        return false
+  try {
+    const response = await axios.post(`/api/emergencies/${alertId}/cancel`, {}, config)
+
+    if (response.data.success) {
+      const index = this.myRequests.findIndex(r => r.id === alertId)
+      if (index !== -1) {
+        this.myRequests[index].status = 'cancelled'
+        this.myRequests[index].cancelled_at = new Date().toISOString()
       }
-    },
+
+      if (this.currentAlert?.id === alertId) {
+        this.currentAlert = null
+        this.status = 'idle'
+      }
+
+      this.cleanupListener(alertId)
+      return true
+    }
+    return false
+  } catch (error) {
+    console.error('Cancel error:', error)
+    return false
+  }
+},
 
     // ─── Listeners init ────────────────────────────────────
     initializeListener() {

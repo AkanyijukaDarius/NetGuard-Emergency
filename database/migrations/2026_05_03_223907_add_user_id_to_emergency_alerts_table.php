@@ -9,20 +9,22 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void
-    {
-        Schema::table('emergency_alerts', function (Blueprint $table) {
-            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
-        });
-    }
+   public function up(): void
+{
+    Schema::table('emergency_alerts', function (Blueprint $table) {
+        $table->foreignId('user_id')->nullable()->after('id')->constrained()->onDelete('cascade');
+    });
+}
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
-    {
-        Schema::table('emergency_alerts', function (Blueprint $table) {
-            //
-        });
-    }
+/**
+ * Reverse the migrations.
+ */
+public function down(): void
+{
+    Schema::table('emergency_alerts', function (Blueprint $table) {
+        $table->dropForeign(['user_id']);
+
+        $table->dropColumn('user_id');
+    });
+}
 };

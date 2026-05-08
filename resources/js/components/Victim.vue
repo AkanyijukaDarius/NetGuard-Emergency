@@ -102,7 +102,7 @@ const handleTrigger = (symptomType) => {
       try {
         const response = await emergencyStore.triggerEmergency({
           phoneNumber: userStore.phoneNumber,
-          idDocument: userStore.idDocument,
+        idDocument: userStore.id_document || userStore.idDocument || "",
           givenName: userStore.givenName,
           familyName: userStore.familyName,
           symptomType: symptomType,
@@ -124,7 +124,7 @@ const handleTrigger = (symptomType) => {
           'Connection Notice',
           () => {
             const smsBody = `EMERGENCY: ${symptomType}. User: ${userStore.fullName}`;
-            window.location.href = `sms:+256700000000?body=${encodeURIComponent(smsBody)}`;
+            window.location.href = `sms:${userStore.phoneNumber}?body=${encodeURIComponent(smsBody)}`;
           }
         );
       }

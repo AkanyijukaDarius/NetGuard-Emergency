@@ -49,6 +49,7 @@ export const useUserStore = defineStore('user', {
       localStorage.setItem('phone', this.phoneNumber);
       localStorage.setItem('given_name', this.givenName);
       localStorage.setItem('family_name', this.familyName);
+      localStorage.setItem('id_document', this.idDocument || '');
       localStorage.setItem('role', this.role);
       localStorage.setItem('kyc_status', String(this.isKycVerified));
     },

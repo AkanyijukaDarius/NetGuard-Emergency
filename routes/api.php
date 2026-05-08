@@ -10,12 +10,12 @@ Route::post('/register', [EmergencyController::class, 'register']);
 Route::post('/login', [EmergencyController::class, 'login']);
 
 
-Route::post('/emergency/trigger', [EmergencyController::class, 'trigger']);
 
 Broadcast::routes();
 
 Route::middleware('auth:sanctum')->group(function () {
     // Victim Endpoints
+    Route::post('/emergency/trigger', [EmergencyController::class, 'trigger']);
     Route::get('/my-emergencies', [EmergencyController::class, 'getMyRequests']);
     Route::post('/emergencies/{alertId}/cancel', [EmergencyController::class, 'cancelEmergency']);
 
