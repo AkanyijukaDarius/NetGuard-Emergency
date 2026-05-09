@@ -24,13 +24,14 @@ NetGuard enables bystanders or patients to trigger emergencies instantly via a o
 NetGuard leverages the **Network as Code Developer Portal** to provide a coherent "API Story":
 
 
-| API Name | Functional Role | Business Impact |
+| API Name/Component | Functional Role | Business Impact |
 | :--- | :--- | :--- |
 | **Location Retrieval** | Pinpoints victim via network cells. | Reduces search time by 40% in GPS-dead zones. |
 | **QoD (Quality on Demand)** | Prioritizes responder data traffic. | Ensures zero latency for Pusher alert signals. |
 | **Reachability Status** | Detects data loss in real-time. | Triggers automatic SMS fallback for 100% uptime. |
 | **SIM Swap/Security layer** | Checks for recent SIM changes. | Eliminates fraudulent "prank" emergency alerts. |
 | **KYC(Know Your Customer)** | Verifies registered user identity. | Provides responders with verified patient names. |
+| ** AI Triage** | AI Logic. | Rule-based Symptom Classifier to recommend actions needed. |
 
 ---
 ## 🛠 Technology Stack
@@ -49,7 +50,12 @@ NetGuard leverages the **Network as Code Developer Portal** to provide a coheren
 
 * **Offline Fallback**: Automatic detection of data drops initiates SMS alerts for responders.
 
-* **Real-time Mission Control**: Responders receive instant audible alerts via **Pusher** for nearby emergencies.
+* **Real-time Mission Control**: Responders receive instant audible alerts via **Pusher** for 
+nearby emergencies.
+
+* **For the Victim**: The app asks 2-3 rapid-fire questions. The AI Triage engine processes these instantly to tell the responder exactly what equipment to bring (e.g., "Heavy Bleeding - Bring Trauma Kit").
+
+* **For the Responder**: The Mission Control dashboard displays an AI Priority Badge (Red/Yellow/Green) so they can manage multiple alerts efficiently.
 
 ---
 ## 🔐 Responder Access
