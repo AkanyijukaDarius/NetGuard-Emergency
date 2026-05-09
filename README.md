@@ -31,7 +31,7 @@ NetGuard leverages the **Network as Code Developer Portal** to provide a coheren
 | **Reachability Status** | Detects data loss in real-time. | Triggers automatic SMS fallback for 100% uptime. |
 | **SIM Swap/Security layer** | Checks for recent SIM changes. | Eliminates fraudulent "prank" emergency alerts. |
 | **KYC(Know Your Customer)** | Verifies registered user identity. | Provides responders with verified patient names. |
-| ** AI Triage** | AI Logic. | Rule-based Symptom Classifier to recommend actions needed. |
+| **AI Triage** | AI Logic. | Rule-based Symptom Classifier to recommend actions needed. |
 
 ---
 ## 🛠 Technology Stack
