@@ -112,4 +112,4 @@ php artisan native:build
 * **Location**: Kampala, Uganda.
 
 ---
-*This project is submitted for the Nokia Open Gateway Hackathon 2026.*
+*This project is submitted for the  Africa Ignite Hackathon  2026.* **GSMA Open Gateway**
