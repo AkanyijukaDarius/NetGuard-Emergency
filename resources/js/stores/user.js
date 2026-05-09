@@ -54,6 +54,39 @@ export const useUserStore = defineStore('user', {
       localStorage.setItem('kyc_status', String(this.isKycVerified));
     },
 
+    async registerUser(userData) {
+  try {
+    const response = await axios.post('/api/register', {
+      phone: userData.phone.trim(),
+      given_name: userData.given_name.trim(),
+      family_name: userData.family_name.trim(),
+      id_document: userData.id_document.trim(),
+      role: userData.role,
+      responder_code: userData.responder_code || null,
+      password: userData.phone.trim(),
+    });
+
+    if (response.data.success) {
+
+        this.setUserDetails(response.data.user, response.data.token);
+
+
+      if (response.data.user.role === 'responder') {
+        this.startPolling();
+      }
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    // Handle validation errors from Laravel (e.g., "Phone already taken")
+    const errorMsg = error.response?.data?.message || error.message;
+    console.error('Registration logic failed:', errorMsg);
+    throw error; // Let the Vue component handle the alert display
+  }
+},
+
     async loginUser(phoneNumber) {
   try {
     const trimmedPhone = phoneNumber.trim();

@@ -16,6 +16,10 @@ export default defineConfig({
         watch: {
             ignored: ['**/storage/framework/views/**'],
         },
+        host: '0.0.0.0',
+        hmr: {
+            host: '192.168.1.9', // Your laptop IP
+        }
 
     },
 });

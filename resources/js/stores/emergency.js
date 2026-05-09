@@ -10,15 +10,14 @@ export const useEmergencyStore = defineStore('emergency', {
     status:          'idle',
     loading:         false,
     error:           null,
-    activeAlerts:    [],   // responder feed
-    resolvedAlerts:  [],   // dispatched by this responder
-    myRequests:      [],   // victim's own alerts
+    activeAlerts:    [],
+    resolvedAlerts:  [],
+    myRequests:      [],
     activeListeners: [],
   }),
 
   actions: {
 
-    // ─── Auth header helper ────────────────────────────────
     prepareHeaders() {
       const userStore = useUserStore()
       if (!userStore.token) return null
@@ -109,14 +108,16 @@ export const useEmergencyStore = defineStore('emergency', {
       }
     },
 
-    async dispatchToAlert(alertId) {
-        const config = this.prepareHeaders()
-        if (!config) return { success: false }
+async dispatchToAlert(alertId) {
+    const config = this.prepareHeaders()
+    if (!config) return { success: false }
 
-        try {
-            const response = await axios.post( `/api/emergencies/${alertId}/dispatch`,{}, config)
+    this.loading = true
 
-            if (response.data.success) {
+    try {
+        const response = await axios.post(`/api/emergencies/${alertId}/dispatch`, {}, config)
+
+        if (response.data.success) {
             const {
                 responder,
                 victim_phone,
@@ -125,44 +126,62 @@ export const useEmergencyStore = defineStore('emergency', {
                 alert_id,
             } = response.data
 
-            const alert = this.activeAlerts.find(a => a.id === alertId)
-            if (alert) {
+            // 1. Update the local state arrays
+            const alertIndex = this.activeAlerts.findIndex(a => a.id === alertId)
+            if (alertIndex !== -1) {
+                const alert = this.activeAlerts[alertIndex]
+
+                // Update alert object
                 alert.status         = 'dispatched'
                 alert.dispatched_at  = new Date().toISOString()
                 alert.responder_name = responder ?? null
+
+                // Move from active to resolved/dispatched list
                 this.resolvedAlerts.unshift(alert)
-                this.activeAlerts = this.activeAlerts.filter(a => a.id !== alertId)
+                this.activeAlerts.splice(alertIndex, 1)
             }
 
+            // 2. Handle SMS Fallback for victims with no data connection
             if (needs_sms && victim_phone) {
                 const message = encodeURIComponent(
-                `NETGUARD EMERGENCY\n` +
-                `Your ${incident_type} alert (#${alert_id}) has been received.\n` +
-                `Responder ${responder} is on the way to you.\n` +
-                `Stay calm and remain at your location.\n` +
-                `Help is coming.`
+                    `NETGUARD EMERGENCY\n` +
+                    `Your ${incident_type} alert (#${alert_id}) has been received.\n` +
+                    `Responder ${responder} is on the way to you.\n` +
+                    `Stay calm and remain at your location.\n` +
+                    `Help is coming.`
                 )
+                // Using _system to ensure it opens the native SMS app on mobile
                 window.open(`sms:${victim_phone}?body=${message}`, '_system')
             }
 
+            this.loading = false
             return {
-                success:      true,
+                success: true,
+                message: 'Dispatch successful',
                 responder,
-                needs_sms:    needs_sms ?? false,
+                needs_sms: needs_sms ?? false,
                 victim_phone,
-                alert_type:   incident_type,
+                alert_type: incident_type,
                 alert_id,
             }
-            }
-
-            return { success: false }
-
-        } catch (error) {
-            console.error('Dispatch error:', error)
-            this.error = 'Dispatch failed'
-            return { success: false }
         }
-        },
+
+        this.loading = false
+        return { success: false, message: response.data.message || 'Dispatch failed' }
+
+    } catch (error) {
+        this.loading = false
+        console.error('Dispatch error:', error)
+
+        const errorMsg = error.response?.data?.message || 'Server error during dispatch'
+        this.error = errorMsg
+
+        return {
+            success: false,
+            message: errorMsg
+        }
+    }
+},
 
     // ─── Victim: cancel alert ─────────────────────────────
 async cancelEmergencyById(alertId) {

@@ -358,15 +358,36 @@ class EmergencyController extends Controller
     // ─────────────────────────────────────────────────────────
     public function dispatchAlert(Request $request, $id)
     {
-        $alert     = EmergencyAlert::with('incident')->findOrFail($id);
-        $responder = Auth::user();
-        $smsSent   = false;
+        $alert = EmergencyAlert::with('incident')->findOrFail($id);
+    $responder = Auth::user();
 
-        $alert->update([
-            'status'        => 'dispatched',
-            'responder_id'  => $responder->id,
-            'dispatched_at' => now(),
-        ]);
+    if ($alert->responder_id === $responder->id && $alert->status === 'dispatched') {
+        return response()->json([
+            'success' => false,
+            'message' => 'You have already been dispatched to this alert.'
+        ], 422);
+    }
+
+    if ($alert->responder_id !== null && $alert->responder_id !== $responder->id) {
+        return response()->json([
+            'success' => false,
+            'message' => 'This alert has already been claimed by another responder.'
+        ], 422);
+    }
+
+    if (in_array($alert->status, ['resolved', 'cancelled'])) {
+        return response()->json([
+            'success' => false,
+            'message' => "Cannot dispatch to an alert that is already {$alert->status}."
+        ], 422);
+    }
+
+    // ... proceed with the update logic ...
+    $alert->update([
+        'status'        => 'dispatched',
+        'responder_id'  => $responder->id,
+        'dispatched_at' => now(),
+    ]);
 
         // Clean up QoD session now that alert is dispatched
         if ($alert->qod_session_id) {

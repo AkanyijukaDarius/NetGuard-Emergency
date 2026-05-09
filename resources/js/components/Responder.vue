@@ -568,7 +568,6 @@ const dispatchToLocation = async () => {
 
   const alertId = alert.id;
   const alertType = alert.incident?.type || getTriageData(alert).condition;
-
   const victimPhone = alert.phone;
   const isSmsMode = alert.reachability_status === 'sms';
 
@@ -584,6 +583,7 @@ const dispatchToLocation = async () => {
         popupOpened.value = false;
         resolvedToday.value++;
 
+       
         if (isSmsMode && victimPhone) {
           const message = `NetGuard: Responder ${userStore.user.given_name} is dispatched to your location (#${alertId}). Proceeding to you now.`;
           const smsUri = `sms:${victimPhone}?body=${encodeURIComponent(message)}`;
@@ -596,7 +596,6 @@ const dispatchToLocation = async () => {
             color: 'purple'
           }).open();
         }
-        // ------------------------------
 
         f7.dialog.create({
           title:   '✅ Dispatch Confirmed',
@@ -616,15 +615,15 @@ const dispatchToLocation = async () => {
               }
             },
             {
-              text:  'Close',
-              onClick: () => {}
+              text:  'Close'
             }
           ]
         }).open();
 
       } else {
+
         f7.dialog.alert(
-          emergencyStore.error || 'Dispatch failed. Please try again.',
+          result.message || 'Dispatch failed. Please try again.',
           'Dispatch Error'
         );
       }

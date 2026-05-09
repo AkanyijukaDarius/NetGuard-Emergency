@@ -8,7 +8,7 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
  * to ensure reliability and bypass WebSocket connection errors.
  */
 
-/*
+
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
@@ -20,4 +20,5 @@ window.Echo = new Echo({
     cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
     forceTLS: true,
 });
-*/
+axios.defaults.baseURL = 'http://192.168.1.9:8000';
+

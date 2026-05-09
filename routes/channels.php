@@ -17,21 +17,25 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 
 Broadcast::channel('emergency.{alertId}', function ($user, $alertId) {
     try {
-        $alert = EmergencyAlert::where('id', $alertId)->first();
+        $alert = EmergencyAlert::find($alertId);
 
         if (!$alert) {
-            Log::warning("Channel Auth Failed: Alert {$alertId} not found for user {$user->id}");
             return false;
         }
 
+        // Check if user is the Victim OR the assigned Responder
         $isOwner = (int) $user->id === (int) $alert->user_id;
+        $isAssignedResponder = (int) $user->id === (int) $alert->responder_id;
 
-        Log::info("Broadcasting auth - User: {$user->id} (Role: {$user->role}), Alert: {$alertId}, Owner: {$alert->user_id}, Allowed: " . ($isOwner ? 'YES' : 'NO'));
+        Log::info("Auth Check - User: {$user->id}, Alert: {$alertId}, Owner: {$alert->user_id}, Responder: {$alert->responder_id}, Allowed: " . ($isOwner || $isAssignedResponder ? 'YES' : 'NO'));
 
-        return $isOwner ? ['id' => $user->id, 'role' => $user->role] : false;
+        if ($isOwner || $isAssignedResponder) {
+            return ['id' => $user->id, 'role' => $user->role];
+        }
+
+        return false;
 
     } catch (\Exception $e) {
-        Log::error("Error in emergency channel auth: " . $e->getMessage());
         return false;
     }
 });

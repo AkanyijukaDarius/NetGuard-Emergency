@@ -108,7 +108,7 @@ return [
         'AWS_*',
         'GITHUB_*',
         'DO_SPACES_*',
-        '*_SECRET',
+        // '*_SECRET',
         'DB_PASSWORD',
         'DB_USERNAME',
     ],
@@ -144,7 +144,7 @@ return [
     */
 
     'runtime' => [
-        'mode' => 'persistent', // 'classic' or 'persistent'
+        'mode' => 'classic', // 'classic' or 'persistent'
         'reset_instances' => true,
         'gc_between_dispatches' => false,
     ],
