@@ -37,7 +37,7 @@ NetGuard leverages the **Network as Code Developer Portal** to provide a coheren
 ## 🛠 Technology Stack
 
 * **Frontend/Mobile**: Vue.js + Framework7 (Native-like UI) + Pinia.
-* **Backend**: Laravel 11 (PHP) with Sanctum authentication.
+* **Backend**: Laravel 12 (PHP) with Sanctum authentication.
 * **Real-time**: **Pusher** + Laravel Echo for instant, low-latency dispatch updates.
 
 
