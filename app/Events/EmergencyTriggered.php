@@ -20,21 +20,24 @@ class EmergencyTriggered implements ShouldBroadcastNow
 
     public function __construct(EmergencyAlert $alert, Incident $incident, array $triageResult)
     {
-        $this->alert = $alert;
+        $this->alert = $alert->load('user');
         $this->incident = $incident;
         $this->triageResult = $triageResult;
     }
 
     public function broadcastOn(): array
     {
-        // This is the channel your dashboard will listen to
         return [
             new Channel('emergency-channel'),
         ];
     }
 
+    /**
+     * By removing broadcastAs or changing it to 'EmergencyTriggered',
+     * it matches your .listen('.EmergencyTriggered') in Pinia.
+     */
     public function broadcastAs(): string
     {
-        return 'emergency.triggered';
+        return 'EmergencyTriggered';
     }
 }

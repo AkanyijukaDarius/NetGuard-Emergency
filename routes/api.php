@@ -11,8 +11,7 @@ Route::post('/login', [EmergencyController::class, 'login']);
 
 
 
-Broadcast::routes();
-
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 Route::middleware('auth:sanctum')->group(function () {
     // Victim Endpoints
     Route::post('/emergency/trigger', [EmergencyController::class, 'trigger']);
@@ -27,4 +26,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/emergencies/resolved', [EmergencyController::class, 'resolved']);
     Route::post('/emergencies/{alertId}/dispatch', [EmergencyController::class, 'dispatchAlert']);
     Route::get('/responders/live', [ResponderController::class, 'getLiveResponders']);
+    Route::post('/emergencies/{id}/resolve', [EmergencyController::class, 'resolve']);
 });

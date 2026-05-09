@@ -30,14 +30,12 @@ class ResponderController extends Controller
         Log::info("Getting location for phone: " . $victim->phone);
         $vLocRaw = $this->camara->getDeviceLocation($victim->phone);
 
-        // Convert to array if needed
         $vLoc = is_string($vLocRaw) ? json_decode($vLocRaw, true) : (array) $vLocRaw;
 
-        // FIXED: Look for coordinates at the top level, not inside 'result'
         $vLat = data_get($vLoc, 'area.center.latitude');
         $vLng = data_get($vLoc, 'area.center.longitude');
 
-        // If that fails, try alternative paths
+        //  alternative paths
         if (!$vLat || !$vLng) {
             $vLat = data_get($vLoc, 'result.area.center.latitude');
             $vLng = data_get($vLoc, 'result.area.center.longitude');
@@ -50,7 +48,6 @@ class ResponderController extends Controller
         if (!$vLat || !$vLng) {
             Log::error("Failed to extract coordinates from location data");
             Log::error("Location data structure: " . json_encode($vLoc));
-            // Continue anyway, distances will be null
         }
 
         $responders = User::where('role', 'responder')
@@ -59,13 +56,11 @@ class ResponderController extends Controller
 
         Log::info("Found " . $responders->count() . " responders");
 
-        // Process each responder
         $data = $responders->map(function ($res) use ($vLat, $vLng) {
             Log::info("Processing responder: " . $res->phone);
 
             $cacheKey = "responder_loc_{$res->phone}";
 
-            // Cache for 2 minutes
             $locationData = Cache::remember($cacheKey, 120, function () use ($res) {
                 return $this->camara->getDeviceLocation($res->phone);
             });
@@ -75,14 +70,12 @@ class ResponderController extends Controller
                 return $this->camara->getReachabilityStatus($res->phone);
             });
 
-            // Handle if locationData is a string that needs decoding
             $locationArray = is_string($locationData) ? json_decode($locationData, true) : (array) $locationData;
 
-            // FIXED: Look for coordinates at the top level, not inside 'result'
             $rLat = data_get($locationArray, 'area.center.latitude');
             $rLng = data_get($locationArray, 'area.center.longitude');
 
-            // If that fails, try alternative path
+            //  alternative path
             if (!$rLat || !$rLng) {
                 $rLat = data_get($locationArray, 'result.area.center.latitude');
                 $rLng = data_get($locationArray, 'result.area.center.longitude');
@@ -92,10 +85,8 @@ class ResponderController extends Controller
                 ? round($this->haversine($vLat, $vLng, $rLat, $rLng), 2)
                 : null;
 
-            // Handle reachability data
             $reachArray = is_string($reachability) ? json_decode($reachability, true) : (array) $reachability;
 
-            // Log responder coordinates for debugging
             Log::info("Responder {$res->phone} - Lat: $rLat, Lng: $rLng, Distance: $distance");
 
             return [
@@ -111,7 +102,7 @@ class ResponderController extends Controller
             ];
         });
 
-        // Optional: Sort by distance (closest first)
+        // Sort by distance (closest first)
         $sorted = $data->sortBy(fn($item) => $item['distance'] ?? 9999)->values();
 
         return response()->json([

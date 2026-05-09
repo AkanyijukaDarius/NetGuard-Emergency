@@ -31,9 +31,9 @@ class EmergencyController extends Controller
         $this->aiTriage = $aiTriage;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // AUTH: Register
-    // ─────────────────────────────────────────────────────────
+
+    //  Register
+
     public function register(Request $request)
     {
         $validated = $request->validate([
@@ -70,9 +70,40 @@ class EmergencyController extends Controller
         ], 201);
     }
 
-    // ─────────────────────────────────────────────────────────
-    // AUTH: Login
-    // ─────────────────────────────────────────────────────────
+
+    public function verifyKyc(Request $request)
+    {
+        $user = $request->user();
+
+        $result = $this->camara->kycMatch($user->phone, [
+            'idDocument' => $user->id_document,
+            'givenName'  => $user->given_name,
+            'familyName' => $user->family_name,
+        ]);
+
+        if ($result['_internal_success'] && ($result['idDocumentMatch'] ?? false)) {
+            $user->update([
+                'is_kyc_verified' => true,
+                'kyc_status'      => 'verified'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'is_verified' => true,
+                'message' => 'Identity confirmed by Network Provider.'
+            ]);
+        }
+        Log::info("KYC match successful for user {$user->id}");
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Identity mismatch. Please ensure your ID matches your SIM registration.',
+            'debug' => $result['error'] ?? 'MISMATCH'
+        ], 422);
+
+    }
+
+    // Login
     public function login(Request $request)
     {
         // Allow phone-only login (password defaults to phone number)
@@ -102,7 +133,6 @@ class EmergencyController extends Controller
                 ], 401);
             }
         } catch (\RuntimeException $e) {
-            // Plain-text password stored (legacy) — rehash and save
             if ($validated['password'] === $user->password) {
                 $user->password = Hash::make($validated['password']);
                 $user->save();
@@ -121,9 +151,9 @@ class EmergencyController extends Controller
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────
-    // MAIN: Trigger Emergency
-    // ─────────────────────────────────────────────────────────
+
+    //  Trigger Emergency
+
     public function trigger(Request $request)
     {
         $request->validate([
@@ -139,12 +169,11 @@ class EmergencyController extends Controller
 
         $phone = $request->phoneNumber;
 
-        // ✅ Resolve symptoms once — never pass null to triage
         $symptoms = (string) ($request->symptoms
                   ?? $request->symptomType
                   ?? 'Medical Emergency');
 
-        // ── SIM Swap check ────────────────────────────────────
+        //  SIM Swap check
         $simSwapData = [];
         $isHighRisk  = false;
         try {
@@ -157,7 +186,7 @@ class EmergencyController extends Controller
             Log::warning("SIM swap check failed for {$phone}: " . $e->getMessage());
         }
 
-        // ── CAMARA Location ───────────────────────────────────
+        //  CAMARA Location
         $networkLocation = null;
         $lat = $request->latitude;
         $lng = $request->longitude;
@@ -173,7 +202,7 @@ class EmergencyController extends Controller
             Log::warning("Location retrieval failed for {$phone}: " . $e->getMessage());
         }
 
-        // ── Reachability ──────────────────────────────────────
+        //  Reachability
         $isReachable  = true;
         $hasData      = true;
         $connectivity = [];
@@ -186,20 +215,17 @@ class EmergencyController extends Controller
             Log::warning("Reachability check failed for {$phone}: " . $e->getMessage());
         }
 
-        // ── QoD Session ───────────────────────────────────────
+        //  QoD Session
         $qodSession = null;
         try {
-            $qodSession = $this->camara->createQoDSession(
-                $phone,
-                'DOWNLINK_M_UPLINK_L',
-                600,
+            $qodSession = $this->camara->createQoDSession($phone, 'DOWNLINK_M_UPLINK_L',600,
                 $request->input('device_ip', '233.252.0.1')
             );
         } catch (\Exception $e) {
             Log::warning("QoD session failed for {$phone}: " . $e->getMessage());
         }
 
-        // ── AI Triage ─────────────────────────────────────────
+        //  AI Triage
         $triageResult = [];
         try {
             $triageResult = $this->aiTriage->triage(
@@ -224,7 +250,6 @@ class EmergencyController extends Controller
             ];
         }
 
-        // ── DB writes ─────────────────────────────────────────
         DB::beginTransaction();
         try {
             $incident = Incident::create([
@@ -272,7 +297,6 @@ class EmergencyController extends Controller
             ], 500);
         }
 
-        // ── Broadcast ─────────────────────────────────────────
         try {
             broadcast(new EmergencyTriggered($alert, $incident, $triageResult))->toOthers();
         } catch (\Exception $e) {
@@ -303,9 +327,8 @@ class EmergencyController extends Controller
         ], 201);
     }
 
-    // ─────────────────────────────────────────────────────────
     // RESPONDER: Active alerts feed
-    // ─────────────────────────────────────────────────────────
+
     public function active()
     {
         $responder = Auth::user();
@@ -353,11 +376,10 @@ class EmergencyController extends Controller
         return response()->json(['success' => true, 'data' => $alerts]);
     }
 
-    // ─────────────────────────────────────────────────────────
     // RESPONDER: Dispatch to alert
-    // ─────────────────────────────────────────────────────────
     public function dispatchAlert(Request $request, $id)
     {
+
         $alert = EmergencyAlert::with('incident')->findOrFail($id);
     $responder = Auth::user();
 
@@ -382,7 +404,6 @@ class EmergencyController extends Controller
         ], 422);
     }
 
-    // ... proceed with the update logic ...
     $alert->update([
         'status'        => 'dispatched',
         'responder_id'  => $responder->id,
@@ -397,6 +418,8 @@ class EmergencyController extends Controller
                 Log::warning("QoD session cleanup failed: " . $e->getMessage());
             }
         }
+
+        $smsSent = false;
 
         // SMS fallback if victim has no data connection
         if ($alert->reachability_status === 'sms') {
@@ -419,39 +442,82 @@ class EmergencyController extends Controller
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────
     // RESPONDER: Resolved/dispatched alerts
-    // ─────────────────────────────────────────────────────────
-    public function resolved()
-    {
-        $alerts = EmergencyAlert::where('status', 'dispatched')
-            ->where('responder_id', Auth::id())
-            ->with(['incident'])
-            ->latest('updated_at')
-            ->get()
-            ->map(function ($alert) {
-                $vLoc = $alert->network_location;
+public function resolved()
+{
+    $alerts = EmergencyAlert::whereIn('status', ['dispatched', 'resolved'])
+        ->where('responder_id', Auth::id())
+        ->with(['incident'])
+        ->latest('updated_at')
+        ->get()
+        ->map(function ($alert) {
+            $vLoc = $alert->network_location;
 
-                return array_merge($alert->toArray(), [
-                    'incident'        => $alert->incident,
-                    'victim_lat'      => data_get($vLoc, 'result.area.center.latitude')
-                                      ?? data_get($vLoc, 'area.center.latitude')
-                                      ?? $alert->latitude,
-                    'victim_lng'      => data_get($vLoc, 'result.area.center.longitude')
-                                      ?? data_get($vLoc, 'area.center.longitude')
-                                      ?? $alert->longitude,
-                    'accuracy_radius' => data_get($vLoc, 'result.area.radius')
-                                      ?? data_get($vLoc, 'area.radius')
-                                      ?? 15,
-                ]);
-            });
+            return array_merge($alert->toArray(), [
+                'incident'        => $alert->incident,
+                'victim_lat'      => data_get($vLoc, 'result.area.center.latitude')
+                                  ?? data_get($vLoc, 'area.center.latitude')
+                                  ?? $alert->latitude,
+                'victim_lng'      => data_get($vLoc, 'result.area.center.longitude')
+                                  ?? data_get($vLoc, 'area.center.longitude')
+                                  ?? $alert->longitude,
+                'accuracy_radius' => data_get($vLoc, 'result.area.radius')
+                                  ?? data_get($vLoc, 'area.radius')
+                                  ?? 15,
+            ]);
+        });
 
-        return response()->json(['success' => true, 'data' => $alerts]);
+    return response()->json(['success' => true, 'data' => $alerts]);
+}
+
+
+  public function resolve(Request $request, $id)
+{
+    $alert = EmergencyAlert::with('incident')->findOrFail($id);
+    $responder = Auth::user();
+
+    if ($alert->responder_id !== $responder->id) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
     }
 
-    // ─────────────────────────────────────────────────────────
+    if ($alert->status === 'resolved') {
+        return response()->json([
+            'success' => false,
+            'message' => 'This incident has already been marked as complete.'
+        ], 422);
+    }
+
+    try {
+        DB::transaction(function () use ($alert) {
+            $alert->update([
+                'status' => 'resolved',
+                'resolved_at' => now(),
+                'response_time_minutes' => $alert->dispatched_at ? now()->diffInMinutes($alert->dispatched_at) : 0,
+            ]);
+
+            if ($alert->incident) {
+                $alert->incident->update([
+                    'status' => 'closed',
+                    'closed_at' => now()
+                ]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Mission complete. Great job, ' . $responder->given_name
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error("Resolution Error: " . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'A server error occurred while closing the case.'
+        ], 500);
+    }
+}
+
     // VICTIM: My requests
-    // ─────────────────────────────────────────────────────────
     public function getMyRequests()
     {
         $user = Auth::user();
@@ -468,9 +534,7 @@ class EmergencyController extends Controller
         return response()->json(['success' => true, 'data' => $requests]);
     }
 
-    // ─────────────────────────────────────────────────────────
     // VICTIM: Cancel alert
-    // ─────────────────────────────────────────────────────────
     public function cancelEmergency(Request $request, $id)
     {
         $existsAtAll = EmergencyAlert::find($id);
@@ -530,37 +594,16 @@ class EmergencyController extends Controller
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────
-    // PRIVATE: SMS dispatch notification
-    // ─────────────────────────────────────────────────────────
-    // private function sendDispatchSms(EmergencyAlert $alert, User $responder): bool
-    // {
-    //     try {
-    //         $AT      = new \AfricasTalking\SDK\AfricasTalking(
-    //             config('services.africastalking.username'),
-    //             config('services.africastalking.api_key')
-    //         );
-    //         $sms     = $AT->sms();
-    //         $incType = $alert->incident?->type ?? 'Emergency';
+    /**
+ * @param \App\Models\EmergencyAlert $alert
+ * @param \App\Models\User $responder
+ */
+    protected function sendDispatchSms($alert, $responder)
+{
+    $message = "NETGUARD: Responder {$responder->given_name} is on the way to your location. Stay calm.";
+    // Integrate with your local SMS gateway (like AfricasTalking or similar)
+    Log::info("SMS Fallback sent to {$alert->phone}: {$message}");
+    return true;
+}
 
-    //         $message = "NETGUARD EMERGENCY\n"
-    //                  . "Your {$incType} alert has been received.\n"
-    //                  . "Responder {$responder->given_name} is on the way.\n"
-    //                  . "Ref: #{$alert->id}\n"
-    //                  . "Stay calm. Help is coming.";
-
-    //         $result = $sms->send([
-    //             'to'      => $alert->phone,
-    //             'message' => $message,
-    //             'from'    => config('services.africastalking.sender_id', 'NetGuard'),
-    //         ]);
-
-    //         Log::info("SMS sent to {$alert->phone}", ['result' => $result]);
-    //         return true;
-
-    //     } catch (\Exception $e) {
-    //         Log::error("SMS failed for alert #{$alert->id}: " . $e->getMessage());
-    //         return false;
-    //     }
-    // }
 }

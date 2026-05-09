@@ -1,6 +1,5 @@
 <template>
   <f7-block class="px-0 pt-0 -mt-6 rounded-t-3xl bg-white min-h-screen">
-    <!-- 1. Map & Main Trigger Section -->
     <div class="bg-white rounded-3xl shadow-xl overflow-hidden mx-4 mt-4 border border-gray-100">
       <div class="h-72 relative flex items-center justify-center bg-slate-50">
         <div id="map" class="absolute inset-0 z-0"></div>
@@ -25,7 +24,7 @@
       </div>
     </div>
 
-    <!-- 2. Quick-Select Grid -->
+    <!-- Quick-Select Grid -->
     <f7-block-title class="font-bold text-gray-700 mt-6">Select Incident for AI Triage</f7-block-title>
     <f7-block class="mt-2">
       <div class="grid grid-cols-2 gap-4">

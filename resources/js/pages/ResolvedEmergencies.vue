@@ -1,79 +1,106 @@
 <template>
   <f7-page name="resolved" class="bg-slate-50">
 
-    <f7-navbar title="Dispatched Alerts" back-link="Back">
-      <template #right>
-        <f7-link @click="refresh" icon-f7="arrow_clockwise" />
-      </template>
-    </f7-navbar>
+    <div class="bg-[#1a5d3b] sticky top-0 z-50 text-white pt-10 pb-4 px-4 shadow-lg">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <f7-link back>
+            <f7-icon f7="chevron_left" size="24" color="white" />
+          </f7-link>
+          <span class="text-2xl font-bold">Mission Control</span>
+        </div>
+        <f7-nav-right>
+          <f7-link @click="refresh" class="flex items-center gap-1">
+            <f7-icon f7="arrow_clockwise" color="white" size="24"></f7-icon>
+          </f7-link>
+        </f7-nav-right>
+      </div>
+    </div>
 
     <div class="p-4">
 
-      <!-- Summary banner -->
-      <div class="p-5 bg-white border-l-4 border-green-600 rounded-2xl shadow-sm mb-6 flex items-center justify-between">
-        <div>
-          <h3 class="text-xs font-bold tracking-wider text-gray-500 uppercase">Total Dispatched</h3>
-          <p class="text-5xl font-black text-gray-900 mt-1">
-            {{ emergencyStore.resolvedAlerts.length }}
-          </p>
-        </div>
-        <f7-icon f7="checkmark_shield_fill" size="48" class="text-green-400" />
+      <div class="flex gap-2 mb-6">
+        <button
+          @click="activeTab = 'dispatched'"
+          :class="[
+            'px-4 py-2 rounded-full text-xs font-black transition-all flex items-center gap-2',
+            activeTab === 'dispatched' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'
+          ]"
+        >
+          <f7-icon f7="map_fill" size="14"></f7-icon>
+          Dispatched ({{ counts.dispatched }})
+        </button>
+
+        <button
+          @click="activeTab = 'resolved'"
+          :class="[
+            'px-4 py-2 rounded-full text-xs font-black transition-all flex items-center gap-2',
+            activeTab === 'resolved' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'
+          ]"
+        >
+          <f7-icon f7="checkmark_seal_fill" size="14"></f7-icon>
+          Resolved ({{ counts.resolved }})
+        </button>
       </div>
 
-      <!-- Loading -->
+      <div class="p-5 bg-white border-l-4 rounded-2xl shadow-sm mb-6 flex items-center justify-between"
+           :class="activeTab === 'dispatched' ? 'border-blue-600' : 'border-green-600'">
+        <div>
+          <h3 class="text-xs font-bold tracking-wider text-gray-500 uppercase">
+            {{ activeTab === 'dispatched' ? 'Active Missions' : 'Completed Cases' }}
+          </h3>
+          <p class="text-5xl font-black text-gray-900 mt-1">
+            {{ filteredAlerts.length }}
+          </p>
+        </div>
+        <f7-icon
+          :f7="activeTab === 'dispatched' ? 'bolt_fill' : 'checkmark_shield_fill'"
+          size="48"
+          :class="activeTab === 'dispatched' ? 'text-blue-400' : 'text-green-400'"
+        />
+      </div>
+
       <div v-if="emergencyStore.loading" class="space-y-4">
-        <div v-for="i in 3" :key="i"
-          class="bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"
-        >
+        <div v-for="i in 3" :key="i" class="bg-white border border-slate-200 rounded-2xl p-5 animate-pulse">
           <div class="h-4 bg-slate-100 rounded w-3/4 mb-3"></div>
           <div class="h-3 bg-slate-100 rounded w-1/2"></div>
         </div>
       </div>
 
-      <!-- Empty -->
-      <div v-else-if="emergencyStore.resolvedAlerts.length === 0"
+      <div v-else-if="filteredAlerts.length === 0"
         class="bg-white border border-slate-200 rounded-2xl p-12 text-center"
       >
         <f7-icon f7="tray" size="48" class="text-slate-300 mb-3" />
-        <p class="text-slate-500 font-bold">No dispatched alerts yet</p>
-        <p class="text-slate-400 text-sm mt-1">Alerts you respond to will appear here</p>
+        <p class="text-slate-500 font-bold">No {{ activeTab }} alerts</p>
+        <p class="text-slate-400 text-sm mt-1">Your activity will appear here</p>
       </div>
 
-      <!-- Resolved cards -->
       <div v-else class="space-y-3">
         <div
-          v-for="alert in emergencyStore.resolvedAlerts"
+          v-for="alert in filteredAlerts"
           :key="alert.id"
-          class="bg-white border border-slate-200 rounded-2xl overflow-hidden"
+          class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm"
         >
           <div class="flex items-stretch">
-            <!-- Green strip — dispatched -->
-            <div class="w-2 shrink-0 bg-green-500"></div>
+            <div class="w-2 shrink-0" :class="alert.status === 'dispatched' ? 'bg-blue-500' : 'bg-green-500'"></div>
 
             <div class="flex-1 p-5">
-              <!-- Title + ID -->
               <div class="flex items-center justify-between">
                 <h3 class="text-base font-bold text-slate-900 leading-tight">
                   {{ alert.incident?.type || getTriageData(alert).condition }}
                 </h3>
-                <span class="px-2 py-1 text-[10px] font-black bg-green-50 text-green-600 rounded uppercase">
-                  Dispatched
+                <span
+                  class="px-2 py-1 text-[10px] font-black rounded uppercase"
+                  :class="alert.status === 'dispatched' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'"
+                >
+                  {{ alert.status }}
                 </span>
               </div>
 
-              <!-- Ref -->
               <p class="text-[10px] text-slate-400 font-mono mt-1">
                 Ref: {{ alert.incident?.incident_code ?? `#${alert.id}` }}
               </p>
 
-              <!-- Responder name if available -->
-              <p v-if="alert.responder_name"
-                class="text-xs text-blue-600 font-bold mt-1"
-              >
-                Responder: {{ alert.responder_name }}
-              </p>
-
-              <!-- Severity badge -->
               <div class="mt-2 flex gap-2">
                 <span
                   class="px-2 py-0.5 text-[10px] font-black rounded uppercase"
@@ -92,45 +119,61 @@
                 </span>
               </div>
 
-              <!-- Time info -->
               <div class="mt-3 pt-3 border-t border-slate-50 flex justify-between items-center">
                 <div class="space-y-0.5">
-                  <div class="text-xs text-slate-400 flex items-center gap-1.5">
-                    <f7-icon f7="clock" size="11" class="text-slate-400" />
+                  <div class="text-[10px] text-slate-400 flex items-center gap-1.5">
+                    <f7-icon f7="clock" size="11" />
                     <span>Sent: {{ formatTime(alert.created_at) }}</span>
-                    <span class="text-slate-300">·</span>
-                    <span>{{ timeAgo(alert.created_at) }}</span>
                   </div>
-                  <div v-if="alert.dispatched_at"
-                    class="text-xs text-green-600 flex items-center gap-1.5 font-medium"
-                  >
-                    <f7-icon f7="checkmark_circle_fill" size="11" class="text-green-500" />
-                    <span>Dispatched: {{ formatTime(alert.dispatched_at) }}</span>
+                  <div v-if="alert.resolved_at" class="text-[10px] text-green-600 font-bold flex items-center gap-1.5">
+                    <f7-icon f7="checkmark_circle_fill" size="11" />
+                    <span>Resolved: {{ formatTime(alert.resolved_at) }}</span>
                   </div>
                 </div>
                 <div class="text-right">
-                  <p class="text-xs text-slate-400">Response time</p>
-                  <p class="text-sm font-black text-green-600">
+                  <p class="text-[9px] text-slate-400 uppercase font-bold">Response</p>
+                  <p class="text-sm font-black text-slate-900">
                     {{ responseTime(alert.created_at, alert.dispatched_at) }}
                   </p>
                 </div>
+              </div>
+
+              <div v-if="alert.status === 'dispatched'" class="mt-4 pt-3 border-t border-slate-100">
+                <f7-button
+                  fill
+                  color="green"
+                  class="rounded-xl font-black shadow-sm"
+                  @click="handleResolve(alert.id)"
+                >
+                  <f7-icon f7="checkmark_seal_fill" size="18" class="mr-2" />
+                  Mark as Resolved
+                </f7-button>
               </div>
 
             </div>
           </div>
         </div>
       </div>
-
     </div>
   </f7-page>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { f7 } from 'framework7-vue'
 import { useEmergencyStore } from '../stores/emergency'
 
 const emergencyStore = useEmergencyStore()
+const activeTab = ref('dispatched') // default view
+
+const filteredAlerts = computed(() => {
+  return emergencyStore.resolvedAlerts.filter(alert => alert.status === activeTab.value)
+})
+
+const counts = computed(() => ({
+  dispatched: emergencyStore.resolvedAlerts.filter(a => a.status === 'dispatched').length,
+  resolved:   emergencyStore.resolvedAlerts.filter(a => a.status === 'resolved').length
+}))
 
 const getTriageData = (alert) => {
   const triage = alert?.ai_triage ?? alert?.incident?.ai_triage
@@ -147,22 +190,11 @@ const formatTime = (dateStr) => {
   })
 }
 
-const timeAgo = (dateStr) => {
-  if (!dateStr) return ''
-  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
-  if (diff < 60)    return `${diff}s ago`
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
-
-// Calculate how fast the responder was dispatched
 const responseTime = (sentAt, dispatchedAt) => {
   if (!sentAt || !dispatchedAt) return '—'
   const diff = Math.floor((new Date(dispatchedAt) - new Date(sentAt)) / 1000)
-  if (diff < 60)   return `${diff}s`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`
-  return `${Math.floor(diff / 3600)}h`
+  if (diff < 60) return `${diff}s`
+  return `${Math.floor(diff / 60)}m ${diff % 60}s`
 }
 
 const refresh = async () => {
@@ -171,10 +203,31 @@ const refresh = async () => {
   f7.preloader.hide()
 }
 
+const handleResolve = (alertId) => {
+  f7.dialog.confirm(
+    'Is the victim assisted and the mission complete?',
+    'Confirm Resolution',
+    async () => {
+      f7.preloader.show();
+      try {
+        await emergencyStore.completeMission(alertId);
+        f7.toast.create({
+          text: 'Case closed. Great job!',
+          closeTimeout: 3000,
+          cssClass: 'bg-green-600'
+        }).open();
+
+        activeTab.value = 'resolved';
+      } catch (error) {
+        f7.dialog.alert('Error updating status.');
+      } finally {
+        f7.preloader.hide();
+      }
+    }
+  );
+}
+
 onMounted(async () => {
-  // If store already has resolved from dispatch, don't re-fetch
-  if (emergencyStore.resolvedAlerts.length === 0) {
-    await emergencyStore.fetchResolvedAlerts()
-  }
+  await emergencyStore.fetchResolvedAlerts()
 })
 </script>

@@ -28,9 +28,9 @@ class CamaraService
         ];
     }
 
-    /**
-     * Unified Safe Wrapper for all API calls
-     */
+
+     // Unified Safe Wrapper for all API calls
+
     private function safePost(string $endpoint, array $payload)
     {
         try {
@@ -39,7 +39,6 @@ class CamaraService
                 ->post($this->baseUrl . $endpoint, $payload);
 
             if ($response->successful()) {
-                // We return the array AND a success flag
                 return array_merge($response->json(), ['_internal_success' => true]);
             }
 
@@ -52,7 +51,7 @@ class CamaraService
         }
     }
 
-    // 1. KYC Match
+    //  KYC Match
     public function kycMatch(string $phoneNumber, array $userData = [])
     {
         $payload = [
@@ -65,10 +64,8 @@ class CamaraService
         return $this->safePost("/passthrough/camara/v1/kyc-match/kyc-match/v0.3/match", $payload);
     }
 
-    /**
- * 5. SIM Swap Check
- * Retrieves the latest date of a SIM swap to assess identity risk.
- */
+
+ // SIM Swap Check
 public function getSimSwapDate(string $phoneNumber)
 {
     $payload = ['phoneNumber' => $phoneNumber];
@@ -79,7 +76,7 @@ public function getSimSwapDate(string $phoneNumber)
     return ($result['_internal_success']) ? $result : null;
 }
 
-    // 2. Device Location
+    //  Device Location
     public function getDeviceLocation(string $phoneNumber, int $maxAge = 60)
     {
         $payload = [
@@ -93,7 +90,7 @@ public function getSimSwapDate(string $phoneNumber)
         return ($result['_internal_success']) ? $result : null;
     }
 
-    // 3. Device Reachability
+    //  Device Reachability
     public function getReachabilityStatus(string $phoneNumber)
     {
         $payload = ['device' => ['phoneNumber' => $phoneNumber]];
@@ -107,7 +104,7 @@ public function getSimSwapDate(string $phoneNumber)
         return $result;
     }
 
-    // 4. Quality on Demand
+    //  Quality on Demand
   public function createQoDSession(string $phoneNumber, string $qosProfile = 'DOWNLINK_L_UPLINK_L', int $duration = 3600)
 {
     $payload = [
@@ -133,7 +130,7 @@ public function getSimSwapDate(string $phoneNumber)
     return ($result['_internal_success']) ? $result : null;
 }
 
-// ─── Delete QoD Session ──────────────────────────────────
+//  Delete QoD Session
 public function deleteQoDSession(string $sessionId): bool
 {
     if (empty($sessionId)) return false;

@@ -193,12 +193,10 @@ const $f7 = inject('$f7');
 const emergencyStore = useEmergencyStore();
 const selectedStatus = ref('all');
 
-// Status tabs for filtering
 const statusTabs = [
   { value: 'all', label: 'All', icon: 'list_bullet' },
   { value: 'pending', label: 'Pending', icon: 'clock' },
   { value: 'dispatched', label: 'Dispatched', icon: 'person_fill_checkmark' },
-  { value: 'in_progress', label: 'In Progress', icon: 'arrow_right_circle' },
   { value: 'resolved', label: 'Resolved', icon: 'checkmark_circle' },
   { value: 'cancelled', label: 'Cancelled', icon: 'xmark_circle' }
 ];
@@ -211,7 +209,6 @@ const onRefresh = async (done) => {
   }
 };
 
-// Filtered requests based on selected status
 const filteredRequests = computed(() => {
   if (selectedStatus.value === 'all') {
     return emergencyStore.myRequests;
@@ -219,9 +216,9 @@ const filteredRequests = computed(() => {
   return emergencyStore.myRequests.filter(req => req.status === selectedStatus.value);
 });
 
-/**
- * Get count of emergencies by status
- */
+
+ // Get count of emergencies by status
+
 const getStatusCount = (status) => {
   if (status === 'all') {
     return emergencyStore.myRequests.length;
@@ -229,9 +226,9 @@ const getStatusCount = (status) => {
   return emergencyStore.myRequests.filter(req => req.status === status).length;
 };
 
-/**
- * Format date with relative time
- */
+
+ // Format date with relative time
+
 const formatDate = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -252,23 +249,22 @@ const formatDate = (dateString) => {
   });
 };
 
-/**
- * Get status display text
- */
+
+  //status display text
+
 const getStatusText = (status) => {
   const statusMap = {
     pending: 'Pending Response',
     dispatched: 'Responder Dispatched',
-    in_progress: 'Emergency In Progress',
     resolved: 'Resolved',
     cancelled: 'Cancelled'
   };
   return statusMap[status] || status;
 };
 
-/**
- * Get status description
- */
+
+ // status description
+
 const getStatusDescription = (status) => {
   const descriptions = {
     pending: 'Waiting for responder to accept',
@@ -280,9 +276,9 @@ const getStatusDescription = (status) => {
   return descriptions[status] || 'Processing';
 };
 
-/**
- * Get estimated time based on status
- */
+
+ // estimated time based on status
+
 const getEstimatedTime = (status) => {
   const times = {
     pending: 'Estimated response: 5-10 minutes',
@@ -292,23 +288,22 @@ const getEstimatedTime = (status) => {
   return times[status] || 'Processing your request';
 };
 
-/**
- * Get status icon
- */
+
+ //status icon
+
 const getStatusIcon = (status) => {
   const icons = {
     pending: 'clock_fill',
     dispatched: 'person_fill_checkmark',
-    in_progress: 'arrow_right_circle_fill',
     resolved: 'checkmark_circle_fill',
     cancelled: 'xmark_circle_fill'
   };
   return icons[status] || 'questionmark_circle_fill';
 };
 
-/**
- * Get status color classes
- */
+
+ // status color classes
+
 const getStatusColor = (status) => {
   const colors = {
     pending: 'text-yellow-500',
@@ -320,9 +315,8 @@ const getStatusColor = (status) => {
   return colors[status] || 'text-gray-500';
 };
 
-/**
- * Get progress percentage
- */
+ // progress percentage
+
 const getProgressValue = (status) => {
   const progress = {
     pending: '25%',
@@ -333,40 +327,37 @@ const getProgressValue = (status) => {
   return progress[status];
 };
 
-/**
- * Truncate text
- */
+
+ // Truncate text
 const truncateText = (text, length) => {
   if (!text) return '';
   if (text.length <= length) return text;
   return text.substring(0, length) + '...';
 };
 
-/**
- * Refresh handler
- */
+
+ // Refresh handler
 const handleRefresh = async () => {
   await emergencyStore.fetchMyRequests();
 };
 
-/**
- * View emergency details
- */
+
+ // View emergency details
 const viewEmergencyDetails = (emergencyId) => {
   if ($f7?.views?.current?.router) {
     $f7.views.current.router.navigate(`/emergency/${emergencyId}`);
   }
 };
 
-/**
- * Cancel emergency
- */
+
+ // Cancel emergency
+
 const cancelEmergency = async (emergency) => {
   f7.dialog.confirm(
     'Are you sure you want to cancel this emergency request?',
     'Cancel Emergency',
     async () => {
-      f7.preloader.show(); // Show loading since we are talking to the server
+      f7.preloader.show( 'Canceling request...', 'dots', 0, false);
       try {
         const success = await emergencyStore.cancelEmergencyById(emergency.id);
         f7.preloader.hide();
@@ -386,9 +377,9 @@ const cancelEmergency = async (emergency) => {
   );
 };
 
-/**
- * Go to trigger emergency page
- */
+
+ // Go to trigger emergency page
+
 const goToTriggerEmergency = () => {
   if ($f7?.views?.current?.router) {
     $f7.views.current.router.navigate('/emergency/trigger');

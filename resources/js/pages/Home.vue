@@ -20,7 +20,6 @@
 
       <div class="pb-1  mt-2">
         <span class="text-md opacity-80">Welcome,</span>
-        <!-- UPDATED: Displays dynamic name from User Store -->
         <span class="font-bold text-lg"> {{ userStore.givenName }}</span>
       </div>
     </div>
@@ -43,15 +42,12 @@ import Responder from '@/components/Responder.vue';
 const userStore = useUserStore();
 
 onMounted(async () => {
-  // 1. Ensure preloader is hidden if coming from login
   f7.preloader.hide();
 
-  // 2. Hydrate store if user refreshed the app
   if (!userStore.token) {
     userStore.hydrateFromStorage();
   }
 
-  // 3. Start polling for new alerts (The "Mailbox" check)
   if (userStore.isAuthenticated) {
     userStore.startPolling();
   }

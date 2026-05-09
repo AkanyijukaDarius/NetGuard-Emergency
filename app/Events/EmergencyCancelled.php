@@ -1,10 +1,10 @@
 <?php
-// app/Events/EmergencyCancelled.php
 
 namespace App\Events;
 
 use App\Models\EmergencyAlert;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -23,37 +23,36 @@ class EmergencyCancelled implements ShouldBroadcastNow
         $this->cancelledBy = $cancelledBy;
     }
 
+
+
     public function broadcastOn(): array
     {
-        $channels = [
-            new Channel('emergency.' . $this->alert->id)
+        return [
+            new Channel('responder.alerts'),
+
+            new PrivateChannel('App.Models.User.' . $this->alert->user_id),
+
+            $this->alert->responder_id
+                ? new PrivateChannel('App.Models.User.' . $this->alert->responder_id)
+                : new Channel('emergency-channel'),
         ];
-
-        // If a responder was assigned, notify them
-        if ($this->alert->responder_id) {
-            $channels[] = new Channel('responder.' . $this->alert->responder_id);
-        }
-
-        // Notify all responders to update their active list
-        $channels[] = new Channel('responder.alerts');
-
-        return $channels;
     }
+
 
     public function broadcastAs(): string
     {
         return 'emergency.cancelled';
     }
 
+
     public function broadcastWith(): array
     {
         return [
-            'alert_id' => $this->alert->id,
-            'status' => 'cancelled',
+            'alert_id'     => $this->alert->id,
+            'status'       => 'cancelled',
             'cancelled_by' => $this->cancelledBy,
-            'responder_id' => $this->alert->responder_id,
-            'message' => 'The emergency request has been cancelled',
-            'cancelled_at' => now()->toISOString()
+            'message'      => 'The emergency request has been cancelled.',
+            'cancelled_at' => now()->toIso8601String(),
         ];
     }
 }

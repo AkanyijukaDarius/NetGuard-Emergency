@@ -29,6 +29,8 @@ class EmergencyAlert extends Model
         'familyName',
         'cancelled_at',
         'cancelled_by',
+        'dispatched_at',
+        'resolved_at',
 
     ];
 
@@ -38,6 +40,8 @@ class EmergencyAlert extends Model
         'longitude'        => 'decimal:8',
         'cancelled_at'    => 'datetime',
         'deleted_at'      => 'datetime',
+        'dispatched_at'   => 'datetime',
+        'resolved_at'     => 'datetime',
     ];
 
     public function incident()
@@ -63,7 +67,7 @@ public function scopeActive($query)
     // Check if emergency can be cancelled
     public function canBeCancelled()
     {
-        return in_array($this->status, ['pending', 'dispatched']) && is_null($this->deleted_at);
+        return in_array($this->status, ['pending', 'dispatched', 'resolved']) && is_null($this->deleted_at);
     }
 
 }

@@ -3,14 +3,13 @@
 
     <div class="p-4 md:flex md:gap-6">
 
-      <!-- LEFT COLUMN -->
       <div class="mb-4 md:w-1/3">
         <div class="grid grid-cols-1 gap-4">
 
           <div class="p-5 bg-white border-l-4 border-red-600 rounded-2xl shadow-sm">
             <h3 class="text-xs font-bold tracking-wider text-gray-500 uppercase">Active Alerts</h3>
             <p class="text-5xl font-black text-gray-900 mt-1">
-              {{ emergencyStore.activeAlerts.length }}
+              {{ activeFeed.length }}
             </p>
           </div>
 
@@ -61,7 +60,6 @@
         </div>
       </div>
 
-      <!-- RIGHT COLUMN -->
       <div class="md:w-2/3">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold text-slate-700">Live Incident Feed</h2>
@@ -71,7 +69,6 @@
           </f7-button>
         </div>
 
-        <!-- Loading skeleton -->
         <div v-if="emergencyStore.loading" class="space-y-4">
           <div v-for="i in 3" :key="i"
             class="bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"
@@ -83,7 +80,7 @@
         </div>
 
         <!-- Empty state -->
-        <div v-else-if="emergencyStore.activeAlerts.length === 0"
+        <div v-else-if="activeFeed.length === 0"
           class="bg-white border border-slate-200 rounded-2xl p-12 text-center"
         >
           <f7-icon f7="checkmark_shield_fill" size="48" class="text-green-400 mb-3" />
@@ -94,7 +91,7 @@
         <!-- Alert cards -->
         <div v-else>
           <div
-            v-for="alert in emergencyStore.activeAlerts"
+            v-for="alert in activeFeed"
             :key="alert.id"
             @click="openDetails(alert)"
             class="mb-4 bg-white border border-slate-200 rounded-2xl hover:shadow-lg transition-all cursor-pointer overflow-hidden"
@@ -111,7 +108,6 @@
               ></div>
 
               <div class="flex-1 p-5">
-                <!-- Title + ID -->
                 <div class="flex items-center justify-between">
                   <h3 class="text-lg font-bold text-slate-900 leading-tight">
                     {{ alert.incident?.type || getTriageData(alert).condition }}
@@ -121,7 +117,6 @@
                   </span>
                 </div>
 
-                <!-- Badges -->
                 <div class="mt-2 flex gap-2 flex-wrap">
                   <span
                     class="px-2 py-0.5 text-[10px] font-black rounded uppercase"
@@ -179,7 +174,7 @@
       </div>
     </div>
 
-    <!-- ─── DETAIL POPUP ───────────────────────────────── -->
+    <!-- popop -->
     <f7-popup :opened="popupOpened" @popup:closed="onPopupClose">
       <div v-if="selectedAlert" class="flex flex-col h-full bg-white">
 
@@ -200,7 +195,6 @@
 
         <div class="flex-1 p-6 overflow-y-auto space-y-6">
 
-          <!-- Quick stats -->
           <div class="grid grid-cols-3 gap-3">
             <div class="bg-slate-50 rounded-2xl p-3 text-center">
               <p class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Distance</p>
@@ -388,6 +382,12 @@ const dispatching       = ref(false)
 const resolvedToday     = ref(0)
 const currentAreaName   = ref('Waiting for GPS...')
 const responderLocation = ref({ lat: 0, lng: 0 })
+
+const activeFeed = computed(() => {
+  return emergencyStore.activeAlerts.filter(alert =>
+    alert.status === 'pending' || alert.status === 'triggered'
+  );
+});
 
 // gpsState: 'requesting' | 'locating' | 'ready' | 'denied'
 const gpsState = ref('requesting')
@@ -583,7 +583,7 @@ const dispatchToLocation = async () => {
         popupOpened.value = false;
         resolvedToday.value++;
 
-       
+
         if (isSmsMode && victimPhone) {
           const message = `NetGuard: Responder ${userStore.user.given_name} is dispatched to your location (#${alertId}). Proceeding to you now.`;
           const smsUri = `sms:${victimPhone}?body=${encodeURIComponent(message)}`;

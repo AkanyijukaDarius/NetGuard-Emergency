@@ -80,10 +80,9 @@ export const useUserStore = defineStore('user', {
 
     return false;
   } catch (error) {
-    // Handle validation errors from Laravel (e.g., "Phone already taken")
     const errorMsg = error.response?.data?.message || error.message;
     console.error('Registration logic failed:', errorMsg);
-    throw error; // Let the Vue component handle the alert display
+    throw error;
   }
 },
 
@@ -91,17 +90,14 @@ export const useUserStore = defineStore('user', {
   try {
     const trimmedPhone = phoneNumber.trim();
 
-    // We send both keys to satisfy Laravel's validation
     const response = await axios.post('/api/login', {
       phone: trimmedPhone,
       password: trimmedPhone
     });
 
     if (response.data.success) {
-      // Use the details from the server to populate the store
       this.setUserDetails(response.data.user, response.data.token);
 
-      // If they are a responder, start looking for alerts immediately
       if (response.data.user.role === 'responder') {
         this.startPolling();
       }
@@ -125,7 +121,6 @@ export const useUserStore = defineStore('user', {
           return;
         }
         try {
-          // Pointing to the new home of this action
           await emergencyStore.fetchActiveAlerts();
           this.pollingTimer = setTimeout(poll, 5000);
         } catch (error) {
@@ -155,12 +150,56 @@ export const useUserStore = defineStore('user', {
         this.sirenInstance.currentTime = 0;
       }
     },
+    //verify KYC status
+    async checkVerificationStatus() {
+        f7.dialog.preloader('Verifying with Network...');
+        try {
+            const response = await axios.get('/api/user/verify-kyc', {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    Accept: 'application/json',
+                }
+            });
+
+            f7.dialog.close();
+
+            this.kycStatus = response.data.status;
+            this.isKycVerified = !!response.data.is_verified;
+
+            localStorage.setItem('kyc_status', String(this.isKycVerified));
+
+            if (this.isKycVerified) {
+                f7.toast.create({
+                    text: '✅ Identity Verified via CAMARA',
+                    closeTimeout: 3000,
+                    color: 'green'
+                }).open();
+            } else {
+                f7.dialog.alert(`Current status: ${this.kycStatus}`, 'KYC Status');
+            }
+
+        } catch (error) {
+            f7.dialog.close();
+
+            console.error('Error checking KYC status:', error.response?.data || error.message);
+
+            if (error.response && error.response.status === 422) {
+                const serverMessage = error.response.data.message || 'Identity mismatch detected.';
+                f7.dialog.alert(serverMessage, 'Verification Failed');
+            } else {
+                f7.dialog.alert(
+                    'Unable to reach the NetGuard verification server. Please check your connection.',
+                    'Connection Error'
+                );
+            }
+        }
+    },
 
     logout() {
       const emergencyStore = useEmergencyStore();
       this.stopPolling();
       this.stopSiren();
-      emergencyStore.reset(); // Clean up emergency state too
+      emergencyStore.reset();
 
       this.token = '';
       localStorage.clear();

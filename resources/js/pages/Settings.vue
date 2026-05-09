@@ -22,7 +22,6 @@
               <f7-icon f7="person_fill" size="32" color="white" />
             </div>
             <div>
-              <!-- Dynamically rendered full name from getter -->
               <p class="font-bold text-lg text-gray-800">{{ userStore.fullName }}</p>
               <div class="flex items-center gap-1.5">
                 <span :class="userStore.isKycVerified ? 'text-green-600' : 'text-orange-500'" class="text-xs font-semibold">
@@ -82,7 +81,7 @@
         <div class="space-y-5">
           <div class="flex justify-between items-center">
             <span class="text-sm font-medium">QoD Profile</span>
-            <span class="text-xs font-bold text-[#1a5d3b]">DOWNLINK_M_UPLINK_L</span> <!-- From CamaraService -->
+            <span class="text-xs font-bold text-[#1a5d3b]">DOWNLINK_M_UPLINK_L</span> 
           </div>
           <div class="flex justify-between items-center border-t border-gray-100 pt-4">
             <span class="text-sm font-medium">Registration status</span>

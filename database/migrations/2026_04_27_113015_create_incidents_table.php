@@ -19,7 +19,7 @@ return new class extends Migration
             $table->json('ai_triage')->nullable();                 // Store AI result
             $table->json('kyc_result')->nullable();                // From KYC Match
             $table->string('qod_session_id')->nullable();          // From QoD
-            $table->string('status')->default('open');             // open, in_progress, resolved, closed
+            $table->string('status')->default('open');             // open, resolved, closed
             $table->foreignId('primary_responder_id')->nullable()->constrained('users');
             $table->timestamp('resolved_at')->nullable();
             $table->integer('total_response_time_minutes')->nullable();

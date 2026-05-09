@@ -21,7 +21,6 @@ class AiTriageService
         ?array  $networkLocation    = null,
         bool    $isHighRiskIdentity = false
     ): array {
-        // Guard — never let empty string or null reach the API
         $symptoms = (string) ($symptoms ?: 'Medical Emergency');
 
         if (empty($this->apiKey)) {

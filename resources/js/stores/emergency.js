@@ -17,7 +17,6 @@ export const useEmergencyStore = defineStore('emergency', {
   }),
 
   actions: {
-
     prepareHeaders() {
       const userStore = useUserStore()
       if (!userStore.token) return null
@@ -29,64 +28,25 @@ export const useEmergencyStore = defineStore('emergency', {
       }
     },
 
-    // ─── Victim: fetch my own alerts ───────────────────────
-    async fetchMyRequests() {
-      const config = this.prepareHeaders()
-      if (!config) return
+    playNotificationSound(file) {
+        console.log(`%c[Audio] Attempting to play: ${file}`, "color: blue; font-style: italic;")
+      const audio = new Audio(file);
 
-      if (this.myRequests.length === 0) {
-            this.loading = true
-        }
-      try {
-        const response = await axios.get('/api/my-emergencies', config)
-        const data = response.data.data || response.data
-        this.myRequests = Array.isArray(data) ? data : [data]
-        this.setupCancellationListeners()
-      } catch (error) {
-        if (error.response?.status === 401) useUserStore().logout()
-      } finally {
-        this.loading = false
-      }
+      audio.play()
+        .then(() => console.log(`%c[AUDIO-SUCCESS]  Playing: ${file}`, "color: green;"))
+        .catch(e => {
+          console.warn(`[NetGuard Audio] BLOCKED: ${file}. User interaction required.`, e);
+          f7.toast.create({
+            text: "Audio alert blocked. Please tap the screen to enable sounds.",
+            closeTimeout: 3000,
+            position: 'center'
+          }).open();
+        });
     },
 
-    // ─── Responder: fetch active alerts ───────────────────
-    async fetchActiveAlerts() {
-      const config = this.prepareHeaders()
-        if (this.activeAlerts.length === 0) {
-            this.loading = true
-        } try {
-        const response = await axios.get('/api/emergencies/active', config)
-        this.activeAlerts = response.data.data ?? []
-      } catch (error) {
-        console.error('Fetch active alerts error:', error)
-        this.error = 'Failed to load alerts'
-      } finally {
-        this.loading = false
-      }
-    },
-
-    // ─── Responder: fetch resolved/dispatched alerts ───────
-    async fetchResolvedAlerts() {
-      const config = this.prepareHeaders()
-     if (this.resolvedAlerts.length === 0) {
-        this.loading = true
-    }
-      try {
-        const response = await axios.get('/api/emergencies/resolved', config)
-        this.resolvedAlerts = response.data.data ?? []
-      } catch (error) {
-        console.error('Fetch resolved alerts error:', error)
-        this.error = 'Failed to load resolved alerts'
-      } finally {
-        this.loading = false
-      }
-    },
-
-    // ─── Victim: trigger emergency ─────────────────────────
     async triggerEmergency(payload) {
       const config = this.prepareHeaders()
       if (!config) return
-
       this.loading = true
       try {
         const response = await axios.post('/api/emergency/trigger', payload, config)
@@ -96,8 +56,8 @@ export const useEmergencyStore = defineStore('emergency', {
         this.aiTriage     = alertData.ai_triage
         this.status       = 'pending'
 
-        const id = alertData.id || alertData.alert_id
-        if (id) this.listenForDispatch(id)
+
+        this.listenForDispatch(alertData.id);
 
         return alertData
       } catch (error) {
@@ -108,113 +68,140 @@ export const useEmergencyStore = defineStore('emergency', {
       }
     },
 
-async dispatchToAlert(alertId) {
-    const config = this.prepareHeaders()
-    if (!config) return { success: false }
+    async fetchMyRequests() {
+      const config = this.prepareHeaders()
+      if (!config) return
+      if (this.myRequests.length === 0) this.loading = true
+      try {
+        const response = await axios.get('/api/my-emergencies', config)
+        const data = response.data.data || response.data
+        this.myRequests = Array.isArray(data) ? data : [data]
 
-    this.loading = true
+        this.myRequests.forEach(req => {
+          if (req.status === 'pending' || req.status === 'dispatched') {
+            this.listenForDispatch(req.id);
+          }
+        });
+      } catch (error) {
+        if (error.response?.status === 401) useUserStore().logout()
+      } finally {
+        this.loading = false
+      }
+    },
 
-    try {
+    async fetchActiveAlerts() {
+      const config = this.prepareHeaders()
+      if (this.activeAlerts.length === 0) this.loading = true
+      try {
+        const response = await axios.get('/api/emergencies/active', config)
+        this.activeAlerts = response.data.data ?? []
+      } catch (error) {
+        this.error = 'Failed to load alerts'
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async dispatchToAlert(alertId) {
+      const config = this.prepareHeaders()
+      if (!config) return { success: false }
+      this.loading = true
+      try {
         const response = await axios.post(`/api/emergencies/${alertId}/dispatch`, {}, config)
+        if (response.data.success) {
+          const alertIndex = this.activeAlerts.findIndex(a => a.id === alertId)
+          if (alertIndex !== -1) {
+            const alert = this.activeAlerts[alertIndex]
+            alert.status = 'dispatched'
+            this.resolvedAlerts.unshift(alert)
+            this.activeAlerts.splice(alertIndex, 1)
+          }
+
+          if (response.data.needs_sms && response.data.victim_phone) {
+            const msg = encodeURIComponent(`NETGUARD: Responder ${response.data.responder} is coming. Stay calm.`);
+            window.open(`sms:${response.data.victim_phone}?body=${msg}`, '_system');
+          }
+
+          return { success: true, responder: response.data.responder }
+        }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || 'Dispatch failed' }
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async fetchResolvedAlerts() {
+      const config = this.prepareHeaders();
+      if (!config) return;
+
+      if (this.resolvedAlerts.length === 0) this.loading = true;
+
+      try {
+
+        const response = await axios.get('/api/emergencies/resolved', config);
+
+        this.resolvedAlerts = response.data.data ?? response.data;
+      } catch (error) {
+        console.error("Error fetching dispatched alerts:", error);
+        this.error = 'Failed to load dispatched alerts';
+      } finally {
+        this.loading = false;
+      }
+    },
+//resolve an emergency after completion
+    async completeMission(alertId) {
+      const config = this.prepareHeaders();
+      try {
+        const response = await axios.post(`/api/emergencies/${alertId}/resolve`, {}, config);
+        if (response.data.success) {
+          this.activeAlerts = this.activeAlerts.filter(a => a.id !== alertId);
+          this.currentAlert = null;
+
+          f7.dialog.alert('Emergency Resolved!', 'Success');
+          f7.view.main.router.back();
+        }
+      } catch (error) {
+        f7.dialog.alert('Error closing the alert.');
+      }
+    },
+
+    async cancelEmergencyById(alertId) {
+      const config = this.prepareHeaders()
+      if (!config) return
+
+      this.loading = true
+      try {
+        const response = await axios.post(`/api/emergencies/${alertId}/cancel`, {}, config)
 
         if (response.data.success) {
-            const {
-                responder,
-                victim_phone,
-                needs_sms,
-                incident_type,
-                alert_id,
-            } = response.data
 
-            // 1. Update the local state arrays
-            const alertIndex = this.activeAlerts.findIndex(a => a.id === alertId)
-            if (alertIndex !== -1) {
-                const alert = this.activeAlerts[alertIndex]
+          this.cleanupListener(`emergency.${alertId}`);
 
-                // Update alert object
-                alert.status         = 'dispatched'
-                alert.dispatched_at  = new Date().toISOString()
-                alert.responder_name = responder ?? null
+          if (this.currentAlert && this.currentAlert.id === alertId) {
+            this.currentAlert.status = 'cancelled';
+          }
+          this.status = 'idle';
 
-                // Move from active to resolved/dispatched list
-                this.resolvedAlerts.unshift(alert)
-                this.activeAlerts.splice(alertIndex, 1)
-            }
+          f7.toast.create({
+            text: 'Emergency cancelled successfully.',
+            closeTimeout: 3000,
+            cssClass: 'bg-orange-600'
+          }).open();
 
-            // 2. Handle SMS Fallback for victims with no data connection
-            if (needs_sms && victim_phone) {
-                const message = encodeURIComponent(
-                    `NETGUARD EMERGENCY\n` +
-                    `Your ${incident_type} alert (#${alert_id}) has been received.\n` +
-                    `Responder ${responder} is on the way to you.\n` +
-                    `Stay calm and remain at your location.\n` +
-                    `Help is coming.`
-                )
-                // Using _system to ensure it opens the native SMS app on mobile
-                window.open(`sms:${victim_phone}?body=${message}`, '_system')
-            }
-
-            this.loading = false
-            return {
-                success: true,
-                message: 'Dispatch successful',
-                responder,
-                needs_sms: needs_sms ?? false,
-                victim_phone,
-                alert_type: incident_type,
-                alert_id,
-            }
+          return true;
         }
-
+      } catch (error) {
+        console.error("Cancellation failed:", error);
+        f7.alert(error.response?.data?.message || 'Could not cancel emergency.');
+        return false;
+      } finally {
         this.loading = false
-        return { success: false, message: response.data.message || 'Dispatch failed' }
-
-    } catch (error) {
-        this.loading = false
-        console.error('Dispatch error:', error)
-
-        const errorMsg = error.response?.data?.message || 'Server error during dispatch'
-        this.error = errorMsg
-
-        return {
-            success: false,
-            message: errorMsg
-        }
-    }
-},
-
-    // ─── Victim: cancel alert ─────────────────────────────
-async cancelEmergencyById(alertId) {
-  const config = this.prepareHeaders()
-  if (!config) return false
-
-  try {
-    const response = await axios.post(`/api/emergencies/${alertId}/cancel`, {}, config)
-
-    if (response.data.success) {
-      const index = this.myRequests.findIndex(r => r.id === alertId)
-      if (index !== -1) {
-        this.myRequests[index].status = 'cancelled'
-        this.myRequests[index].cancelled_at = new Date().toISOString()
       }
+    },
 
-      if (this.currentAlert?.id === alertId) {
-        this.currentAlert = null
-        this.status = 'idle'
-      }
 
-      this.cleanupListener(alertId)
-      return true
-    }
-    return false
-  } catch (error) {
-    console.error('Cancel error:', error)
-    return false
-  }
-},
-
-    // ─── Listeners init ────────────────────────────────────
-    initializeListener() {
+   initializeListener() {
       const userStore = useUserStore()
 
       if (userStore.isResponder) {
@@ -222,106 +209,90 @@ async cancelEmergencyById(alertId) {
         this.fetchActiveAlerts()
       }
 
-      if (userStore.isAuthenticated) {
+      if (userStore.isAuthenticated && !userStore.isResponder) {
         this.fetchMyRequests()
       }
     },
 
-    destroyListener() {
-      if (!window.Echo) return
-      window.Echo.leaveChannel('emergency-channel')
-      window.Echo.leaveChannel('responder.alerts')
-      this.activeListeners.forEach(id => this.cleanupListener(id))
-    },
-
-    // ─── Responder: listen for new incoming alerts ─────────
-    initializeResponderListener() {
+   initializeResponderListener() {
       if (!window.Echo) return
 
+      // 1. Listen for NEW Emergencies (The "Siren" Feed)
       window.Echo.channel('emergency-channel')
-        .listen('.emergency.triggered', (data) => {
-          // Avoid duplicates
+        .listen('.EmergencyTriggered', (data) => {
+          const userStore = useUserStore();
+
+          // Guard: Don't alert the responder if they somehow triggered it themselves
+          if (data.alert?.user_id === userStore.userId) return;
+
           const exists = this.activeAlerts.find(a => a.id === data.alert?.id)
           if (!exists) this.activeAlerts.unshift(data.alert)
 
-          const userStore = useUserStore()
-          userStore.triggerSiren?.()
+          this.playNotificationSound('/assets/siren.mp3');
 
           f7.notification.create({
-            icon:         '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
-            title:        'NEW EMERGENCY',
-            subtitle:     `${data.alert?.ai_triage?.severity?.toUpperCase() ?? 'URGENT'} Priority`,
-            text:         `Incident: ${data.alert?.incident?.type ?? 'Incoming Request'}`,
-            closeButton:  true,
-            closeTimeout: 5000,
+            icon: '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
+            title: 'NEW EMERGENCY',
+            text: `Incident: ${data.alert?.incident?.type ?? 'Incoming Request'}`,
+            closeButton: true,
+            on: { close: () => useUserStore().stopSiren?.() }
           }).open()
-        })
+        });
 
-      // Listen for cancellations from victims
+      // 2. Listen for CANCELLATIONS (The "Kill Signal")
       window.Echo.channel('responder.alerts')
         .listen('.emergency.cancelled', (data) => {
-          this.activeAlerts = this.activeAlerts.filter(a => a.id !== data.alert_id)
 
-          f7.notification.create({
-            title:        'Alert Cancelled',
-            text:         `Incident #${data.alert_id} was cancelled by the victim.`,
-            closeTimeout: 3000,
-          }).open()
-        })
-    },
+          this.activeAlerts = this.activeAlerts.filter(a => a.id !== data.alert_id);
 
-    // ─── Victim: listen for responder coming ──────────────
-    listenForDispatch(alertId) {
-      if (!window.Echo || this.activeListeners.includes(alertId)) return
+          if (this.currentAlert && this.currentAlert.id === data.alert_id) {
+            this.currentAlert = null;
+            this.status = 'idle';
 
-      window.Echo.private(`emergency.${alertId}`)
-        .listen('.responder.coming', (data) => {
-          if (this.currentAlert) {
-            this.currentAlert.responder_name = data.responderName
-            this.currentAlert.status         = 'dispatched'
+            f7.notification.create({
+              icon: '<i class="f7-icons text-orange-600">xmark_octagon_fill</i>',
+              title: 'Incident Cancelled',
+              text: `The request #${data.alert_id} is no longer active.`,
+              closeTimeout: 5000,
+            }).open();
+
+            f7.view.main.router.back();
           }
-          this.status = 'dispatched'
+        });
+    },
+
+    listenForDispatch(alertId) {
+      const channelName = `emergency.${alertId}`;
+
+      if (!window.Echo || this.activeListeners.includes(channelName)) return;
+
+
+      window.Echo.private(channelName)
+        .listen('.ResponderDispatched', (data) => {
+
+          this.playNotificationSound('/assets/dispatched_chime.mp3');
+
+          if (this.currentAlert && this.currentAlert.id === alertId) {
+            this.currentAlert.status = 'dispatched';
+            this.currentAlert.responder_name = data.responder?.given_name;
+          }
+          this.status = 'dispatched';
 
           f7.notification.create({
-            icon:         '<i class="f7-icons text-green-600">checkmark_shield_fill</i>',
-            title:        'Help is on the way!',
-            subtitle:     `Responder: ${data.responderName}`,
-            text:         'A responder has been dispatched to your location.',
-            closeTimeout: 6000,
-          }).open()
-        })
+            icon: '<i class="f7-icons text-green-600">checkmark_shield_fill</i>',
+            title: 'Help is on the way!',
+            text: `Responder ${data.responder?.given_name} has been dispatched to your location.`,
+            closeTimeout: 8000,
+          }).open();
+        });
 
-      this.activeListeners.push(alertId)
+      this.activeListeners.push(channelName);
     },
 
-    // ─── Victim: cancellation listeners ───────────────────
-    setupCancellationListeners() {
+    cleanupListener(channelName) {
       if (!window.Echo) return
-      this.myRequests.forEach(emergency => {
-        const isActive = !['resolved', 'cancelled'].includes(emergency.status)
-        if (isActive && !this.activeListeners.includes(emergency.id)) {
-          this.listenForCancellation(emergency.id)
-        }
-      })
-    },
-
-    listenForCancellation(alertId) {
-      if (!window.Echo || this.activeListeners.includes(alertId)) return
-
-      window.Echo.channel(`emergency.${alertId}`)
-        .listen('.emergency.cancelled', () => {
-          this.myRequests = this.myRequests.filter(r => r.id !== alertId)
-          if (this.currentAlert?.id === alertId) this.reset()
-          this.cleanupListener(alertId)
-        })
-
-      this.activeListeners.push(alertId)
-    },
-
-    cleanupListener(alertId) {
-      if (!window.Echo) return
-      window.Echo.leaveChannel(`emergency.${alertId}`)
-      this.activeListeners = this.activeListeners.filter(id => id !== alertId)
+      window.Echo.leaveChannel(channelName)
+      this.activeListeners = this.activeListeners.filter(id => id !== channelName)
     },
 
     reset() {
@@ -331,7 +302,6 @@ async cancelEmergencyById(alertId) {
       this.myRequests     = []
       this.resolvedAlerts = []
       this.status         = 'idle'
-      this.error          = null
-    },
-  },
+    }
+  }
 })

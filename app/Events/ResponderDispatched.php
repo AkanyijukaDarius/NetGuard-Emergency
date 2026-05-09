@@ -4,27 +4,26 @@ namespace App\Events;
 use App\Models\EmergencyAlert;
 use App\Models\User;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow; // Use Now for immediate delivery
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Broadcasting\InteractsWithSockets;
 
 class ResponderDispatched implements ShouldBroadcastNow
 {
-    use Dispatchable, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $alert;
-    public $responderName;
+    public $responder;
 
     public function __construct(EmergencyAlert $alert, User $responder)
     {
         $this->alert = $alert;
-        // Use given_name because your User model uses it
-        $this->responderName = $responder->given_name;
+        $this->responder = $responder;
     }
 
-    public function broadcastOn(): array
+  public function broadcastOn(): array
     {
-        // Must match the Pinia: window.Echo.private(`emergency.${alertId}`)
         return [
             new PrivateChannel('emergency.' . $this->alert->id),
         ];
@@ -32,15 +31,22 @@ class ResponderDispatched implements ShouldBroadcastNow
 
     public function broadcastAs(): string
     {
-        return 'responder.coming';
+
+        return 'ResponderDispatched';
     }
 
     public function broadcastWith(): array
     {
         return [
-            'responderName' => $this->responderName,
-            'alertId' => $this->alert->id,
-            'status' => 'Help is on the way'
+            'alert' => [
+                'id' => $this->alert->id,
+                'status' => 'dispatched',
+            ],
+            'responder' => [
+                'given_name' => $this->responder->given_name,
+                'phone' => $this->responder->phone,
+            ],
+            'message' => 'Help is on the way!'
         ];
     }
 }
