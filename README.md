@@ -71,7 +71,7 @@ To ensure only trained personnel access the **Mission Control** dashboard, respo
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/netguard-emergency.git
+git clone https://github.com/AkanyijukaDarius/NetGuard-Emergency.git
 
 # Install dependencies
 composer install
