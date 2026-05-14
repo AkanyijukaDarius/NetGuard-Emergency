@@ -72,36 +72,47 @@ class EmergencyController extends Controller
 
 
     public function verifyKyc(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        $result = $this->camara->kycMatch($user->phone, [
-            'idDocument' => $user->id_document,
-            'givenName'  => $user->given_name,
-            'familyName' => $user->family_name,
+    $result = $this->camara->kycMatch($user->phone, [
+        'idDocument' => $user->id_document,
+        'givenName'  => $user->given_name,
+        'familyName' => $user->family_name,
+    ]);
+
+    $idMatches = $result['idDocumentMatch'] ?? false;
+
+    if ( $idMatches) {
+        $user->update([
+            'is_kyc_verified' => true,
+            'kyc_status'      => 'verified'
         ]);
 
-        if ($result['_internal_success'] && ($result['idDocumentMatch'] ?? false)) {
-            $user->update([
-                'is_kyc_verified' => true,
-                'kyc_status'      => 'verified'
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'is_verified' => true,
-                'message' => 'Identity confirmed by Network Provider.'
-            ]);
-        }
-        Log::info("KYC match successful for user {$user->id}");
-
         return response()->json([
-            'success' => false,
-            'message' => 'Identity mismatch. Please ensure your ID matches your SIM registration.',
-            'debug' => $result['error'] ?? 'MISMATCH'
-        ], 422);
-
+            'success' => true,
+            'is_verified' => true,
+            'message' => 'Identity confirmed by Network Provider.'
+        ]);
     }
+
+    Log::warning("KYC Verification Failed for User {$user->id}", [
+        'phone' => $user->phone,
+        'id_match' => $idMatches,
+        'raw_result' => $result
+    ]);
+
+    $user->update(['kyc_status' => 'failed']);
+
+    return response()->json([
+        'success' => false,
+        'is_verified' => false,
+        'message' => 'Identity mismatch. The ID Number provided does not match the SIM card registration.',
+        'details' => [
+            'id_match' => $idMatches ? 'Valid' : 'Invalid/Mismatch',
+        ]
+    ], 422);
+}
 
     // Login
     public function login(Request $request)
