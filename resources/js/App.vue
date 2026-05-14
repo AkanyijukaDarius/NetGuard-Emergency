@@ -4,7 +4,7 @@
     <template v-if="!userStore.token">
       <f7-view
         main
-        :url="!userStore.isRegistered ? '/onboarding/' : '/login/'"
+        :url="!userStore.hasAccount ? '/onboarding/' : '/login/'"
         class="safe-areas"
       />
     </template>
@@ -75,12 +75,10 @@ const f7params = {
   theme: 'auto',
   routes: routes,
   darkMode: false,
-  colors: {
-    primary: '#1a5d3b',
-  },
+  colors: { primary: '#1a5d3b' },
   on: {
     routeChange(newRoute) {
-      currentPath.value = newRoute.url;
+      currentPath.value = newRoute.path;
     }
   }
 };
@@ -88,17 +86,28 @@ const f7params = {
 watch(() => userStore.token, (newToken) => {
   if (newToken) {
     emergencyStore.initializeListener();
+  } else {
+    if (window.Echo) window.Echo.disconnect();
   }
 });
 
 onMounted(() => {
   f7ready(() => {
-    emergencyStore.initializeListener();
+    const token = userStore.token;
+    const hasAccount = userStore.hasAccount;
 
-    if (userStore.token) {
-      emergencyStore.initializeListener();
-    }
+    setTimeout(() => {
+      if (token) {
+        emergencyStore.initializeListener();
+        f7.views.main.router.navigate('/', { reloadCurrent: true });
+      } else if (hasAccount) {
+        f7.views.main.router.navigate('/login/', { reloadCurrent: true });
+      } else {
+        f7.views.main.router.navigate('/onboarding/', { reloadCurrent: true });
+      }
+    }, 100);
   });
+
 });
 </script>
 <style>
@@ -111,12 +120,10 @@ onMounted(() => {
 }
 
 .custom-tabbar .tab-link {
-  height: 100px !important;
-  margin-top: 50px !important;
+  height: 100% !important; 
+  padding-top: 15px !important; 
   flex-direction: column;
   justify-content: center;
-  border-radius: 18px !important;
-  transition: background-color 0.3s ease;
 }
 
 .custom-tabbar .tab-link-active {

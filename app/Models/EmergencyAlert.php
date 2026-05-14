@@ -31,6 +31,11 @@ class EmergencyAlert extends Model
         'cancelled_by',
         'dispatched_at',
         'resolved_at',
+        'kyc_result',
+        'kyc_verified',
+        'sim_swap_flagged',
+
+
 
     ];
 
@@ -42,6 +47,9 @@ class EmergencyAlert extends Model
         'deleted_at'      => 'datetime',
         'dispatched_at'   => 'datetime',
         'resolved_at'     => 'datetime',
+        'kyc_result'      => 'array',
+        'kyc_verified'    => 'boolean',
+        'sim_swap_flagged' => 'boolean',
     ];
 
     public function incident()

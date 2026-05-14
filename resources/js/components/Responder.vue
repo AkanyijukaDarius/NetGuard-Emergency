@@ -13,42 +13,20 @@
             </p>
           </div>
 
-          <div class="p-5 bg-white border-l-4 border-green-600 rounded-2xl shadow-sm">
+        <div class="p-5 bg-white border-l-4 border-green-600 rounded-2xl shadow-sm">
             <h3 class="text-xs font-bold tracking-wider text-gray-500 uppercase">Your Current Position</h3>
-
-            <!-- GPS states -->
-            <div v-if="gpsState === 'requesting'" class="flex items-center gap-2 mt-1">
-              <f7-icon f7="location" size="16" class="text-gray-400 animate-pulse" />
-              <p class="text-base font-bold text-gray-400">Requesting GPS...</p>
+            <div v-show="gpsState === 'ready'" class="mt-3 mb-3 w-full rounded-xl overflow-hidden border border-slate-100 shadow-inner" style="min-height: 112px;">
+              <div id="responder-mini-map" style="width: 100%; height: 112px;"></div>
             </div>
-            <div v-else-if="gpsState === 'denied'" class="flex items-center gap-2 mt-1">
-              <f7-icon f7="location_slash_fill" size="16" class="text-red-400" />
-              <p class="text-base font-bold text-red-400">Location access denied</p>
-            </div>
-            <div v-else-if="gpsState === 'locating'" class="flex items-center gap-2 mt-1">
-              <f7-icon f7="location_fill" size="16" class="text-blue-400 animate-pulse" />
-              <p class="text-base font-bold text-blue-400">Identifying area...</p>
-            </div>
-            <div v-else>
-              <p class="text-lg font-bold text-gray-800 leading-tight">{{ currentAreaName }}</p>
-            </div>
-
             <div class="mt-2 flex items-center gap-2">
-              <span
-                class="w-2 h-2 rounded-full"
-                :class="{
-                  'bg-gray-300':              gpsState === 'requesting',
-                  'bg-red-400':               gpsState === 'denied',
-                  'bg-blue-400 animate-ping': gpsState === 'locating',
-                  'bg-green-500 animate-ping': gpsState === 'ready',
-                }"
-              ></span>
+              <span class="w-2 h-2 rounded-full" :class="gpsClass"></span>
               <p class="text-xs font-mono text-gray-400">
-                <span v-if="gpsState === 'ready'">
-                  {{ responderLocation.lat.toFixed(5) }}, {{ responderLocation.lng.toFixed(5) }}
-                </span>
+                <span v-if="gpsState === 'ready'">{{ responderLocation.lat.toFixed(5) }}, {{ responderLocation.lng.toFixed(5) }}</span>
                 <span v-else class="italic">{{ gpsStateLabel }}</span>
               </p>
+            </div>
+            <div v-show="currentAreaName" class="mt-1 text-sm font-bold text-gray-700">
+              {{ currentAreaName }}
             </div>
           </div>
 
@@ -265,6 +243,19 @@
             </div>
         </div>
         </div>
+        <div class="p-6 overflow-y-auto space-y-6">
+            <h4 class="uppercase text-slate-500 text-[10px] font-black tracking-[0.2em] mb-3 flex items-center gap-2">
+            <f7-icon f7="globe" size="12" class="text-green-500" />
+            Victim location on a map
+            </h4>
+
+            <div class="relative w-full h-64 rounded-3xl overflow-hidden shadow-inner border border-slate-200">
+                <div id="victim-map" class="w-full h-full"></div>
+                <div class="absolute bottom-2 left-2 z-400 bg-white/80 backdrop-blur-sm px-2 py-1 rounded text-[9px] font-bold text-slate-600 uppercase">
+                {{ selectedAlert?.network_location ? 'Tower Triangulation' : 'GPS High Accuracy' }}
+                </div>
+            </div>
+        </div>
 
           <!-- AI Triage -->
           <div class="p-5 bg-blue-50 border border-blue-100 rounded-3xl">
@@ -366,155 +357,108 @@
   </f7-page>
 </template>
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, nextTick, watch } from 'vue' // Added watch
 import { f7 } from 'framework7-vue'
 import { useUserStore }      from '../stores/user'
 import { useEmergencyStore } from '../stores/emergency'
 import axios from 'axios'
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 const userStore      = useUserStore()
 const emergencyStore = useEmergencyStore()
 
-// ─── State ──────────────────────────────────────────────
 const popupOpened       = ref(false)
 const selectedAlert     = ref(null)
 const dispatching       = ref(false)
 const resolvedToday     = ref(0)
 const currentAreaName   = ref('Waiting for GPS...')
 const responderLocation = ref({ lat: 0, lng: 0 })
+const map = ref(null);
+const marker = ref(null);
+const miniMap = ref(null);
+const miniMarker = ref(null);
 
-const activeFeed = computed(() => {
-  return emergencyStore.activeAlerts.filter(alert =>
-    alert.status === 'pending' || alert.status === 'triggered'
-  );
-});
-
-// gpsState: 'requesting' | 'locating' | 'ready' | 'denied'
+// GPS State logic
 const gpsState = ref('requesting')
-
-const gpsStateLabel = computed(() => ({
-  requesting: 'Waiting for permission...',
-  locating:   'Resolving area name...',
-  ready:      'GPS Active',
-  denied:     'Enable location in settings',
-}[gpsState.value] ?? ''))
-
 let watchId = null
 
-
-const formatTime = (dateStr) => {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleTimeString('en-UG', {
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  })
-}
-
-const timeAgo = (dateStr) => {
-  if (!dateStr) return ''
-
-  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
-  if (diff < 60) {
-    return `${diff}s ago`
+// WATCHER: This is the critical fix for the mini-map
+watch(gpsState, (newState) => {
+  if (newState === 'ready') {
+    nextTick(() => {
+      updateResponderMiniMap(responderLocation.value.lat, responderLocation.value.lng);
+    });
   }
-  if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
-  }
-  if (diff < 86400) {
-    return `${Math.floor(diff / 3600)}h ago`
-  }
-  const days = Math.floor(diff / 86400)
-  return days === 1 ? '1 day ago' : `${days} days ago`
-}
+});
 
-const getTriageData = (alert) => {
-  const triage = alert?.ai_triage ?? alert?.incident?.ai_triage
-  return {
-    condition: triage?.likely_condition ?? triage?.condition ?? 'Medical Emergency',
-    responder: triage?.recommended_responder ?? 'VHT',
-    tips: Array.isArray(triage?.first_aid_tips) ? triage.first_aid_tips : [],
-  }
-}
+const initMap = (lat, lng) => {
+  nextTick(() => {
+    if (map.value) map.value.remove();
+    
+    map.value = L.map('victim-map', {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([lat, lng], 16);
 
-const getVictimCoords = (alert) => {
-  if (!alert) return { lat: 0, lng: 0 };
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map.value);
 
-  const lat = alert.victim_lat ||
-              alert.latitude ||
-              alert.network_location?.latitude ||
-              alert.network_location?.area?.center?.latitude ||
-              alert.incident?.latitude;
-
-  const lng = alert.victim_lng ||
-              alert.longitude ||
-              alert.network_location?.longitude ||
-              alert.network_location?.area?.center?.longitude ||
-              alert.incident?.longitude;
-
-  return {
-    lat: lat ? parseFloat(lat) : 0,
-    lng: lng ? parseFloat(lng) : 0
-  };
-}
-
-
-const calculateDistance = (alert) => {
-  //  live phone GPS first. Fallback to API coords if GPS isn't ready.
-  let rLat = responderLocation.value.lat;
-  let rLng = responderLocation.value.lng;
-
-  if (rLat === 0 && alert.responder_api_lat) {
-    rLat = parseFloat(alert.responder_api_lat);
-    rLng = parseFloat(alert.responder_api_lng);
-  }
-
-  //  VICTIM COORDINATES
-  const victim = getVictimCoords(alert);
-  const vLat = victim.lat;
-  const vLng = victim.lng;
-
-  if (rLat === 0) return 'Locating You...';
-  if (vLat === 0) return 'Locating Victim...';
-
-  const R = 6371;
-
-  const toRad = (value) => (value * Math.PI) / 180;
-
-  const dLat = toRad(vLat - rLat);
-  const dLon = toRad(vLng - rLng);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(rLat)) * Math.cos(toRad(vLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c; // Distance in km
-
-  if (distance < 1) {
-    return (distance * 1000).toFixed(0) + ' m';
-  }
-
-  return distance.toFixed(2) + ' km';
-};
-
-const updateAreaName = async (lat, lng) => {
-  currentAreaName.value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-  gpsState.value = 'locating';
-
-  try {
-    const res = await axios.get('https://nominatim.openstreetmap.org/reverse', {
-      params: { format: 'jsonv2', lat, lon: lng, zoom: 16, 'accept-language': 'en' },
-      headers: { 'User-Agent': 'NetGuardEmergency/1.0 (dariusakanyijuka3@gmail.com)' }
+    const pulsingIcon = L.divIcon({
+      className: 'pulse-marker',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+      html: ''
     });
 
-    if (res.data?.address) {
-      const a = res.data.address;
-      currentAreaName.value = a.suburb || a.neighbourhood || a.village || a.town || 'Kampala Area';
-    }
-    gpsState.value = 'ready';
-  } catch (err) {
-    gpsState.value = 'ready';
-  }
+    marker.value = L.marker([lat, lng], { icon: pulsingIcon }).addTo(map.value);
+
+    setTimeout(() => {
+      if (map.value) map.value.invalidateSize();
+    }, 400);
+  });
 }
+
+const updateResponderMiniMap = (lat, lng) => {
+  nextTick(() => {
+    const container = document.getElementById('responder-mini-map');
+    if (!container) return;
+
+    if (!miniMap.value) {
+      miniMap.value = L.map('responder-mini-map', {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false
+      }).setView([lat, lng], 15);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap.value);
+
+      const respIcon = L.divIcon({
+        className: 'pulse-marker responder-pulse',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+
+      miniMarker.value = L.marker([lat, lng], { icon: respIcon }).addTo(miniMap.value);
+    } else {
+      miniMap.value.setView([lat, lng]);
+      miniMarker.value.setLatLng([lat, lng]);
+    }
+
+    // Force size re-calculation after the UI transition
+    setTimeout(() => {
+      if (miniMap.value) miniMap.value.invalidateSize();
+    }, 300);
+  });
+};
 
 const startGps = () => {
   if (!navigator.geolocation) {
@@ -522,112 +466,185 @@ const startGps = () => {
     return;
   }
 
-  const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+  const options = { enableHighAccuracy: false, timeout: 15000, maximumAge: 5000 };
 
-  const success = (pos) => {
-    const { latitude, longitude } = pos.coords;
-    responderLocation.value = { lat: latitude, lng: longitude };
-    if (gpsState.value !== 'ready') updateAreaName(latitude, longitude);
-    gpsState.value = 'ready';
-  };
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { handleGpsSuccess(pos); watchId = navigator.geolocation.watchPosition(handleGpsSuccess, handleGpsError, options); },
+    handleGpsError,
+    options
+  );
+};
 
-  const error = (err) => {
-    console.warn(`GPS Error (${err.code}): ${err.message}`);
-    if (err.code === 1) gpsState.value = 'denied';
-  };
+const handleGpsSuccess = (pos) => {
+  const { latitude, longitude } = pos.coords;
+  responderLocation.value = { lat: latitude, lng: longitude };
+  gpsState.value = 'ready';
+  updateResponderMiniMap(latitude, longitude);
+  if (currentAreaName.value === 'Waiting for GPS...') updateAreaName(latitude, longitude);
+};
 
-  watchId = navigator.geolocation.watchPosition(success, error, options);
-  navigator.geolocation.getCurrentPosition(success, error, options);
-}
+const handleGpsError = (err) => { 
+  console.error("GPS Error Code:", err.code);
+  f7.toast.create({ text: `GPS Error: ${err.message}`, closeTimeout: 3000 }).open(); 
+  gpsState.value = 'denied'; 
+};
 
+const updateAreaName = async (lat, lng) => {
+  try {
+    const res = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+      params: { format: 'jsonv2', lat, lon: lng, zoom: 16 }
+    });
+    currentAreaName.value = res.data?.address?.suburb || res.data?.address?.town || 'Kampala Area';
+  } catch (e) { currentAreaName.value = "Location Locked"; }
+};
 
 const onInit = async () => {
   startGps();
-
-  if (emergencyStore.activeAlerts.length === 0) {
-     emergencyStore.initializeListener();
-  }
+  if (emergencyStore.activeAlerts.length === 0) emergencyStore.initializeListener();
 }
 
 const onLeave = () => {
-  if (watchId) navigator.geolocation.clearWatch(watchId)
-  emergencyStore.destroyListener()
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  emergencyStore.destroyListener();
 }
 
-const openDetails = (alert) => { selectedAlert.value = alert; popupOpened.value = true; }
-const onPopupClose = () => { popupOpened.value = false; selectedAlert.value = null; }
-const refreshAlerts = async () => {
-  f7.preloader.show();
-  await emergencyStore.fetchActiveAlerts();
-  f7.preloader.hide();
+const openDetails = (alert) => {
+  selectedAlert.value = alert;
+  popupOpened.value = true;
+  const coords = getVictimCoords(alert);
+  if (coords.lat !== 0) initMap(coords.lat, coords.lng);
 }
+
+const onPopupClose = () => {
+  popupOpened.value = false;
+  if (map.value) { map.value.remove(); map.value = null; }
+  selectedAlert.value = null;
+}
+
+// Helpers
+const activeFeed = computed(() => emergencyStore.activeAlerts.filter(a => a.status === 'pending' || a.status === 'triggered'));
+const gpsStateLabel = computed(() => ({ requesting: 'Waiting...', locating: 'Locating...', ready: 'GPS Active', denied: 'GPS Blocked' }[gpsState.value]));
+const gpsClass = computed(() => ({ 'bg-gray-300': gpsState.value === 'requesting', 'bg-red-400': gpsState.value === 'denied', 'bg-blue-400 animate-ping': gpsState.value === 'locating', 'bg-green-500 animate-ping': gpsState.value === 'ready' }));
+
+const formatTime = (d) => d ? new Date(d).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }) : '—';
+const timeAgo = (d) => {
+    if (!d) return '';
+    const diff = Math.floor((Date.now() - new Date(d)) / 1000);
+    return diff < 60 ? `${diff}s ago` : diff < 3600 ? `${Math.floor(diff/60)}m ago` : `${Math.floor(diff/3600)}h ago`;
+};
+
+const getTriageData = (a) => {
+  const t = a?.ai_triage ?? a?.incident?.ai_triage;
+  return { condition: t?.likely_condition ?? 'Medical Emergency', responder: t?.recommended_responder ?? 'VHT', tips: Array.isArray(t?.first_aid_tips) ? t.first_aid_tips : [] };
+}
+
+const getVictimCoords = (a) => {
+  const lat = a?.victim_lat || a?.latitude || a?.network_location?.latitude || a?.incident?.latitude;
+  const lng = a?.victim_lng || a?.longitude || a?.network_location?.longitude || a?.incident?.longitude;
+  return { lat: parseFloat(lat) || 0, lng: parseFloat(lng) || 0 };
+}
+
+const calculateDistance = (a) => {
+  let rLat = responderLocation.value.lat || parseFloat(a.responder_api_lat) || 0;
+  let rLng = responderLocation.value.lng || parseFloat(a.responder_api_lng) || 0;
+  const v = getVictimCoords(a);
+  if (rLat === 0 || v.lat === 0) return 'Locating...';
+  const R = 6371;
+  const dLat = (v.lat - rLat) * Math.PI / 180;
+  const dLon = (v.lng - rLng) * Math.PI / 180;
+  const res = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(rLat * Math.PI / 180) * Math.cos(v.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+  const dist = R * 2 * Math.atan2(Math.sqrt(res), Math.sqrt(1-res));
+  return dist < 1 ? (dist * 1000).toFixed(0) + ' m' : dist.toFixed(2) + ' km';
+};
+
+const refreshAlerts = async () => { f7.preloader.show(); await emergencyStore.fetchActiveAlerts(); f7.preloader.hide(); }
 
 const dispatchToLocation = async () => {
   const alert = selectedAlert.value;
-  if (!alert) return;
-
-  const alertId = alert.id;
-  const alertType = alert.incident?.type || getTriageData(alert).condition;
-  const victimPhone = alert.phone;
-  const isSmsMode = alert.reachability_status === 'sms';
-
-  f7.dialog.confirm(
-    `Confirm dispatch to Incident #${alertId}?\nThe victim will be notified immediately.`,
-    'Responder Dispatch',
-    async () => {
-      dispatching.value = true;
-      const result = await emergencyStore.dispatchToAlert(alertId);
-      dispatching.value = false;
-
-      if (result.success) {
-        popupOpened.value = false;
-        resolvedToday.value++;
-
-
-        if (isSmsMode && victimPhone) {
-          const message = `NetGuard: Responder ${userStore.user.given_name} is dispatched to your location (#${alertId}). Proceeding to you now.`;
-          const smsUri = `sms:${victimPhone}?body=${encodeURIComponent(message)}`;
-
-          window.location.href = smsUri;
-
-          f7.toast.create({
-            text: 'Opening SMS to notify victim...',
-            closeTimeout: 2000,
-            color: 'purple'
-          }).open();
-        }
-
-        f7.dialog.create({
-          title:   '✅ Dispatch Confirmed',
-          text:    isSmsMode
-                   ? `Dispatched to <strong>${alertType}</strong>. Please complete the SMS send in your messaging app.`
-                   : `Dispatched to <strong>${alertType}</strong>. The victim has been notified via data.`,
-          buttons: [
-            {
-              text:  'View Path/Map',
-              bold:  true,
-              color: 'green',
-              onClick: () => {
-                f7.views.main.router.navigate('/resolved-emergencies', {
-                  animate: true,
-                  transition: 'f7-flip',
-                });
-              }
-            },
-            {
-              text:  'Close'
-            }
-          ]
-        }).open();
-
-      } else {
-
-        f7.dialog.alert(
-          result.message || 'Dispatch failed. Please try again.',
-          'Dispatch Error'
-        );
-      }
+  f7.dialog.confirm(`Confirm dispatch to Incident #${alert.id}?`, 'NetGuard Dispatch', async () => {
+    dispatching.value = true;
+    const res = await emergencyStore.dispatchToAlert(alert.id);
+    dispatching.value = false;
+    if (res.success) {
+      popupOpened.value = false; resolvedToday.value++;
+      if (alert.reachability_status === 'sms') window.location.href = `sms:${alert.phone}?body=NetGuard: Responder ${userStore.user.given_name} is on the way.`;
+      f7.dialog.alert('Dispatch Confirmed!');
     }
-  );
+  });
 };
+
+onUnmounted(() => {
+  if (map.value) map.value.remove();
+  if (miniMap.value) miniMap.value.remove();
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+});
 </script>
+<style>
+#responder-mini-map, #victim-map {
+  width: 100%;
+  height: 100%;
+  background: #f8fafc; 
+  z-index: 1;
+}
+
+.leaflet-container {
+  font-family: inherit;
+  z-index: 1 !important;
+}
+
+/* Pulsing Marker Styles */
+.pulse-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.pulse-marker::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  background-color: #ef4444; /* Red for Victims */
+  border: 2px solid white;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+
+.pulse-marker::after {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: emergency-pulse 1.8s ease-out infinite;
+  z-index: 1;
+}
+
+/* Blue pulse for Responder */
+.responder-pulse::before {
+  background-color: #3b82f6;
+}
+
+.responder-pulse::after {
+  background-color: #3b82f6;
+}
+
+@keyframes emergency-pulse {
+  0% { width: 12px; height: 12px; opacity: 1; }
+  100% { width: 45px; height: 45px; opacity: 0; }
+}
+
+/* Custom leaflet control overrides */
+.leaflet-control-attribution {
+  display: none !important;
+}
+</style>

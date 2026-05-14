@@ -164,18 +164,53 @@ class EmergencyController extends Controller
             'longitude'   => 'nullable|numeric',
             'symptoms'    => 'nullable|string',
             'symptomType' => 'nullable|string',
-            'device_ip'   => 'nullable|string',
         ]);
 
         $phone = $request->phoneNumber;
+        $symptoms = (string) ($request->symptoms ?? $request->symptomType ?? 'Medical Emergency');
 
-        $symptoms = (string) ($request->symptoms
-                  ?? $request->symptomType
-                  ?? 'Medical Emergency');
+        $user = null;
+        if (Auth::check()) {
+            $user = Auth::user();
+        } else {
+            // Fallback: Try to find user by phone for anonymous triggers
+            $user = User::where('phone', $phone)->first();
+        }
 
-        //  SIM Swap check
+        //kyc verification
+        $kycResult = [];
+        $isKycVerified = false;
+        $kycMatchScore = null;
+
+        try {
+            $kycPayload = [
+                'idDocument' => $user?->id_document,
+                'givenName'  => $request->given_name,
+                'familyName' => $request->family_name,
+            ];
+
+            $kycResult = $this->camara->kycMatch($phone, $kycPayload);
+
+            $isKycVerified = $kycResult['_internal_success']
+                          || ($kycResult['idDocumentMatch'] ?? false)
+                          || ($kycResult['nameMatch'] ?? $kycResult['givenNameMatch'] ?? false);
+
+            $kycMatchScore = $kycResult['matchScore'] ?? null;
+
+            Log::info("KYC Match during emergency", [
+                'phone'          => $phone,
+                'kyc_verified'   => $isKycVerified,
+                'has_id_document'=> !empty($user?->id_document),
+                'match_score'    => $kycMatchScore
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning("KYC Match failed for {$phone}: " . $e->getMessage());
+        }
+
+        //sim swap check
         $simSwapData = [];
-        $isHighRisk  = false;
+        $isHighRisk = false;
         try {
             $simSwapData = $this->camara->getSimSwapDate($phone);
             if (isset($simSwapData['latestSimSwapDate'])) {
@@ -183,83 +218,55 @@ class EmergencyController extends Controller
                     ->diffInHours(now()) < 48;
             }
         } catch (\Exception $e) {
-            Log::warning("SIM swap check failed for {$phone}: " . $e->getMessage());
+            Log::warning("SIM swap check failed for {$phone}");
         }
 
-        //  CAMARA Location
+        //device location
         $networkLocation = null;
         $lat = $request->latitude;
         $lng = $request->longitude;
         try {
             $networkLocation = $this->camara->getDeviceLocation($phone);
-            $lat = data_get($networkLocation, 'result.area.center.latitude')
-                ?? data_get($networkLocation, 'area.center.latitude')
-                ?? $lat;
-            $lng = data_get($networkLocation, 'result.area.center.longitude')
-                ?? data_get($networkLocation, 'area.center.longitude')
-                ?? $lng;
-        } catch (\Exception $e) {
-            Log::warning("Location retrieval failed for {$phone}: " . $e->getMessage());
-        }
+            $lat = data_get($networkLocation, 'result.area.center.latitude') ?? $lat;
+            $lng = data_get($networkLocation, 'result.area.center.longitude') ?? $lng;
+        } catch (\Exception $e) {}
 
-        //  Reachability
-        $isReachable  = true;
-        $hasData      = true;
-        $connectivity = [];
+        //reachability status
+        $reachabilityData = [];
         try {
             $reachabilityData = $this->camara->getReachabilityStatus($phone);
-            $isReachable  = data_get($reachabilityData, 'reachable', true);
-            $connectivity = data_get($reachabilityData, 'result.connectivity', []);
-            $hasData      = in_array('DATA', $connectivity) || $isReachable;
-        } catch (\Exception $e) {
-            Log::warning("Reachability check failed for {$phone}: " . $e->getMessage());
-        }
+        } catch (\Exception $e) {}
 
-        //  QoD Session
+        //ai triage
+        $triageResult = $this->aiTriage->triage($symptoms, 'urban', $networkLocation, $isHighRisk);
+
+        $agenticResult = $this->aiTriage->agenticOrchestrate(
+            $triageResult,
+            $reachabilityData,
+            $networkLocation,
+            $phone
+        );
+
         $qodSession = null;
-        try {
-            $qodSession = $this->camara->createQoDSession($phone, 'DOWNLINK_M_UPLINK_L',600,
-                $request->input('device_ip', '233.252.0.1')
-            );
-        } catch (\Exception $e) {
-            Log::warning("QoD session failed for {$phone}: " . $e->getMessage());
-        }
-
-        //  AI Triage
-        $triageResult = [];
-        try {
-            $triageResult = $this->aiTriage->triage(
-                $symptoms,
-                'urban',
-                $networkLocation,
-                $isHighRisk
-            );
-        } catch (\Exception $e) {
-            Log::warning("AI triage failed: " . $e->getMessage());
-            $triageResult = [
-                'severity'                    => 'medium',
-                'likely_condition'            => $symptoms,
-                'recommended_responder'       => 'VHT',
-                'first_aid_tips'              => [
-                    'Keep patient calm',
-                    'Monitor breathing',
-                    'Do not move unless necessary',
-                ],
-                'estimated_response_priority' => 'urgent',
-                'reasoning'                   => 'Fallback triage — AI unavailable',
-            ];
+        if ($agenticResult['agentic_actions']['qod_triggered'] ?? false) {
+            $qosProfile = $agenticResult['agentic_actions']['qos_profile'];
+            try {
+                $qodSession = $this->camara->createQoDSession($phone, $qosProfile, 1800);
+            } catch (\Exception $e) {
+                Log::warning("Agentic QoD failed: " . $e->getMessage());
+            }
         }
 
         DB::beginTransaction();
         try {
             $incident = Incident::create([
                 'incident_code'   => 'NG-' . now()->format('Ymd-His'),
-                'type'            => $triageResult['likely_condition'] ?? $symptoms,
-                'severity'        => $triageResult['severity']         ?? 'medium',
+                'type'            => $agenticResult['likely_condition'] ?? $symptoms,
+                'severity'        => $agenticResult['severity'] ?? 'medium',
                 'description'     => $symptoms,
                 'latitude'        => $lat,
                 'longitude'       => $lng,
-                'ai_triage'       => $triageResult,
+                'ai_triage'       => $agenticResult,
                 'sim_swap_result' => $simSwapData,
                 'qod_session_id'  => $qodSession['sessionId'] ?? null,
                 'status'          => 'open',
@@ -267,7 +274,7 @@ class EmergencyController extends Controller
 
             $alert = EmergencyAlert::create([
                 'incident_id'         => $incident->id,
-                'user_id'             => Auth::id(),
+                'user_id'             => Auth::id() ?? $user?->id,
                 'phone'               => $phone,
                 'given_name'          => $request->givenName,
                 'family_name'         => $request->familyName,
@@ -278,10 +285,11 @@ class EmergencyController extends Controller
                 'status'              => 'pending',
                 'session_token'       => Str::uuid(),
                 'qod_session_id'      => $qodSession['sessionId'] ?? null,
-                'reachability_status' => ($isReachable && $hasData) ? 'data' : 'sms',
-                'connectivity_type'   => $connectivity[0] ?? 'OFFLINE',
+                'reachability_status' => 'data',
                 'is_anonymous'        => !Auth::check(),
                 'sim_swap_flagged'    => $isHighRisk,
+                'kyc_verified'        => $isKycVerified,
+                'kyc_result'          => $kycResult,
             ]);
 
             DB::commit();
@@ -289,41 +297,34 @@ class EmergencyController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error("Alert creation failed: " . $e->getMessage());
-            Log::error($e->getTraceAsString());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create alert: ' . $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to create alert'], 500);
         }
 
+        // Broadcast
         try {
-            broadcast(new EmergencyTriggered($alert, $incident, $triageResult))->toOthers();
-        } catch (\Exception $e) {
-            Log::error("Broadcast failed: " . $e->getMessage());
-        }
+            broadcast(new EmergencyTriggered($alert, $incident, $agenticResult))->toOthers();
+        } catch (\Exception $e) {}
 
         return response()->json([
             'success'  => true,
             'alert_id' => $alert->id,
-            'alert'    => $alert->load('incident'),
             'triage'   => [
-                'severity'  => $triageResult['severity'],
-                'condition' => $triageResult['likely_condition'],
-                'responder' => $triageResult['recommended_responder'],
-                'tips'      => $triageResult['first_aid_tips'] ?? [],
-                'priority'  => $triageResult['estimated_response_priority'] ?? 'urgent',
+                'severity'  => $agenticResult['severity'],
+                'condition' => $agenticResult['likely_condition'],
+                'responder' => $agenticResult['recommended_responder'],
+            ],
+            'agentic' => $agenticResult['agentic_actions'] ?? [],
+            'security' => [
+                'kyc_verified'    => $isKycVerified,
+                'kyc_match_score' => $kycMatchScore,
+                'sim_swap_risk'   => $isHighRisk,
+                'used_db_id_doc'  => !empty($user?->id_document),
             ],
             'network' => [
-                'location_source' => $networkLocation ? 'camara' : 'gps',
-                'reachable'       => $isReachable,
-                'sms_fallback'    => !$hasData,
-                'qod_active'      => !is_null($qodSession),
+                'qod_activated' => $agenticResult['agentic_actions']['qod_triggered'] ?? false,
+                'qos_profile'   => $agenticResult['agentic_actions']['qos_profile'] ?? null,
             ],
-            'security' => [
-                'sim_swap_risk' => $isHighRisk,
-            ],
-            'message' => 'Emergency alert sent!',
+            'message' => 'Emergency alert triggered with KYC verification from user database.',
         ], 201);
     }
 

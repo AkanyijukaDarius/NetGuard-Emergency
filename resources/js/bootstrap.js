@@ -1,23 +1,18 @@
-import axios from 'axios';
-window.axios = axios;
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-
-//  baseURL for ALL axios requests
-const SERVER_IP = '192.168.1.9';
-axios.defaults.baseURL = `http://${SERVER_IP}:8000`;
-
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
 window.Pusher = Pusher;
 
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 window.Echo = new Echo({
     broadcaster: 'pusher',
     key: import.meta.env.VITE_PUSHER_APP_KEY,
-    cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
-    forceTLS: false,
+    cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER, 
+    forceTLS: true,
     disableStats: true,
-    authEndpoint: `http://${SERVER_IP}:8000/api/broadcasting/auth`,
+    
+    authEndpoint: `${API_URL}/api/broadcasting/auth`,
     auth: {
         headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`,

@@ -9,16 +9,17 @@ import MyRequests  from "./pages/MyRequests.vue";
 import ResolvedEmergencies from "./pages/ResolvedEmergencies.vue";
 
  const routes = [
-  { path: "/", component: Home },
-  { path: "/report", component: Report },
-  { path: "/responders", component: Responders },
-  { path: "/resolved-emergencies", component: ResolvedEmergencies },
-  { path: "/my-requests", component: MyRequests },
-  { path: "/settings", component: Settings },
-  { path: "/onboarding", component: OnboardingPage },
-  { path: "/login", component: Login },
-  { path: "/404", component: NotFound },
-  { path: "(.*)", redirect: "/404" }
+    { path: "/login", component: Login },
+    {   path: "/onboarding", component: OnboardingPage },
+
+    { path: "/", component: Home },
+    { path: "/report", component: Report },
+    { path: "/responders", component: Responders },
+    { path: "/resolved-emergencies", component: ResolvedEmergencies },
+    { path: "/my-requests", component: MyRequests },
+    { path: "/settings", component: Settings },
+    { path: "/404", component: NotFound },
+    { path: "(.*)", redirect: "/404" }
 ];
 
 export default routes;

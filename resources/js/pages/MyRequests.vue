@@ -344,8 +344,8 @@ const handleRefresh = async () => {
 
  // View emergency details
 const viewEmergencyDetails = (emergencyId) => {
-  if ($f7?.views?.current?.router) {
-    $f7.views.current.router.navigate(`/emergency/${emergencyId}`);
+  if (f7?.views?.current?.router) {
+    f7.views.current.router.navigate(`/emergency/${emergencyId}`);
   }
 };
 

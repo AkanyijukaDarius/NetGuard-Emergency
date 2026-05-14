@@ -6,6 +6,7 @@ import { useEmergencyStore } from './emergency'; // Correctly linked
 export const useUserStore = defineStore('user', {
   state: () => ({
     token: localStorage.getItem('token') || '',
+    hasAccount:localStorage.getItem('hasAccount') === 'true',
     role: localStorage.getItem('role') || 'user',
     phoneNumber: localStorage.getItem('phone') || '',
     givenName: localStorage.getItem('given_name') || '',
@@ -39,6 +40,7 @@ export const useUserStore = defineStore('user', {
       this.idDocument = details.id_document;
       this.role = details.role || 'user';
       this.isKycVerified = !!details.is_kyc_verified;
+      this.hasAccount = true;
 
       if (token) {
         this.token = token;
@@ -52,6 +54,7 @@ export const useUserStore = defineStore('user', {
       localStorage.setItem('id_document', this.idDocument || '');
       localStorage.setItem('role', this.role);
       localStorage.setItem('kyc_status', String(this.isKycVerified));
+      localStorage.setItem('hasAccount', String(this.hasAccount));
     },
 
     async registerUser(userData) {
@@ -197,18 +200,27 @@ export const useUserStore = defineStore('user', {
 
     logout() {
       const emergencyStore = useEmergencyStore();
+
       this.stopPolling();
       this.stopSiren();
-      emergencyStore.reset();
 
+      if (window.Echo) {
+        window.Echo.disconnect();
+      }
+
+      emergencyStore.$reset();
       this.token = '';
-      localStorage.clear();
+
+      const itemsToRemove = ['token', 'phone', 'given_name', 'family_name', 'role', 'kyc_status'];
+      itemsToRemove.forEach(item => localStorage.removeItem(item));
+
       delete axios.defaults.headers.common['Authorization'];
 
       f7.views.main.router.navigate('/login', {
-        reloadCurrent: true,
-        ignoreCache: true
+        reloadAll: true,
+        clearPreviousHistory: true,
       });
     },
   },
+
 });

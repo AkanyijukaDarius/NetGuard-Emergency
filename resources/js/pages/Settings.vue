@@ -81,7 +81,7 @@
         <div class="space-y-5">
           <div class="flex justify-between items-center">
             <span class="text-sm font-medium">QoD Profile</span>
-            <span class="text-xs font-bold text-[#1a5d3b]">DOWNLINK_M_UPLINK_L</span> 
+            <span class="text-xs font-bold text-[#1a5d3b]">DOWNLINK_M_UPLINK_L</span>
           </div>
           <div class="flex justify-between items-center border-t border-gray-100 pt-4">
             <span class="text-sm font-medium">Registration status</span>
@@ -103,7 +103,7 @@
           <!-- Calls store action to save preference -->
           <f7-toggle
             color="green"
-            :checked="userStore.aiEnabled"
+            checked
             @change="(e) => userStore.toggleAi(e.target.checked)"
           />
         </div>
@@ -128,7 +128,6 @@ const handleLogout = () => {
     'Sign Out',
     () => {
       userStore.logout();
-      f7.views.main.router.navigate('/login');
     }
   );
 };

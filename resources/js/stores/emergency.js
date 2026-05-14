@@ -203,6 +203,10 @@ export const useEmergencyStore = defineStore('emergency', {
 
    initializeListener() {
       const userStore = useUserStore()
+      if (!userStore.isAuthenticated) {
+    console.log('[NetGuard] Unauthenticated user. Listeners skipped.');
+    return;
+  }
 
       if (userStore.isResponder) {
         this.initializeResponderListener()
@@ -214,52 +218,68 @@ export const useEmergencyStore = defineStore('emergency', {
       }
     },
 
-   initializeResponderListener() {
-      if (!window.Echo) return
+  initializeResponderListener() {
+  if (!window.Echo) {
+    console.error('[NetGuard] Echo is not initialized. Check your broadcast configuration.');
+    return;
+  }
 
-      // 1. Listen for NEW Emergencies (The "Siren" Feed)
-      window.Echo.channel('emergency-channel')
-        .listen('.EmergencyTriggered', (data) => {
-          const userStore = useUserStore();
+  const userStore = useUserStore();
 
-          // Guard: Don't alert the responder if they somehow triggered it themselves
-          if (data.alert?.user_id === userStore.userId) return;
+  if (!userStore.isResponder) {
+    console.log('[NetGuard] Access Denied: User is not a responder. Listeners aborted.');
+    return;
+  }
 
-          const exists = this.activeAlerts.find(a => a.id === data.alert?.id)
-          if (!exists) this.activeAlerts.unshift(data.alert)
+  console.log('[NetGuard] Initializing Responder Listeners...');
 
-          this.playNotificationSound('/assets/siren.mp3');
+  window.Echo.channel('emergency-channel')
+    .listen('.EmergencyTriggered', (data) => {
+      
+      if (data.alert?.user_id === userStore.userId) return;
 
-          f7.notification.create({
-            icon: '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
-            title: 'NEW EMERGENCY',
-            text: `Incident: ${data.alert?.incident?.type ?? 'Incoming Request'}`,
-            closeButton: true,
-            on: { close: () => useUserStore().stopSiren?.() }
-          }).open()
-        });
+      const exists = this.activeAlerts.find(a => a.id === data.alert?.id);
+      if (!exists) {
+        this.activeAlerts.unshift(data.alert);
+      }
 
-      // 2. Listen for CANCELLATIONS (The "Kill Signal")
-      window.Echo.channel('responder.alerts')
-        .listen('.emergency.cancelled', (data) => {
+      this.playNotificationSound('/assets/siren.mp3');
 
-          this.activeAlerts = this.activeAlerts.filter(a => a.id !== data.alert_id);
-
-          if (this.currentAlert && this.currentAlert.id === data.alert_id) {
-            this.currentAlert = null;
-            this.status = 'idle';
-
-            f7.notification.create({
-              icon: '<i class="f7-icons text-orange-600">xmark_octagon_fill</i>',
-              title: 'Incident Cancelled',
-              text: `The request #${data.alert_id} is no longer active.`,
-              closeTimeout: 5000,
-            }).open();
-
-            f7.view.main.router.back();
+      f7.notification.create({
+        icon: '<i class="f7-icons text-red-600">exclamationmark_triangle_fill</i>',
+        title: 'NEW EMERGENCY ALERT',
+        text: `Type: ${data.alert?.incident?.type || 'Medical Request'}`,
+        subtitle: `Ref: #${data.alert?.id}`,
+        closeButton: true,
+        on: {
+          close: () => {
+            userStore.stopSiren?.();
           }
-        });
-    },
+        }
+      }).open();
+    });
+
+  window.Echo.channel('responder.alerts')
+    .listen('.emergency.cancelled', (data) => {
+      console.log(`[NetGuard] Incident #${data.alert_id} was cancelled by the user.`);
+
+      this.activeAlerts = this.activeAlerts.filter(a => a.id !== data.alert_id);
+
+      if (this.currentAlert && this.currentAlert.id === data.alert_id) {
+        this.currentAlert = null;
+        this.status = 'idle';
+
+        f7.notification.create({
+          icon: '<i class="f7-icons text-orange-600">xmark_octagon_fill</i>',
+          title: 'Incident Cancelled',
+          text: `The request #${data.alert_id} is no longer active.`,
+          closeTimeout: 5000,
+        }).open();
+
+        f7.view.main.router.back();
+      }
+    });
+},
 
     listenForDispatch(alertId) {
       const channelName = `emergency.${alertId}`;
