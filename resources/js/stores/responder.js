@@ -6,11 +6,15 @@ export const useResponderStore = defineStore('responder', {
   state: () => ({
     liveResponders: [],
     isProbing: false,
+    lastUpdated: null
   }),
 
   actions: {
     async fetchLiveResponders() {
       const userStore = useUserStore();
+      
+      if (this.isProbing) return;
+
       this.isProbing = true;
 
       try {
@@ -21,10 +25,16 @@ export const useResponderStore = defineStore('responder', {
         });
 
         if (response.data.success) {
-          this.liveResponders = response.data.data;
+          this.liveResponders = response.data.data.map(responder => ({
+            ...responder,
+            phone: responder.phone || null, 
+            distance: responder.distance !== null ? parseFloat(responder.distance) : null
+          }));
+          
+          this.lastUpdated = new Date();
         }
       } catch (error) {
-        console.error("Probe failed:", error);
+        console.error("CAMARA Network Probe failed:", error);
       } finally {
         this.isProbing = false;
       }

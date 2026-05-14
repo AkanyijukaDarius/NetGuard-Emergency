@@ -86,16 +86,26 @@ class ResponderController extends Controller
                 : null;
 
             $reachArray = is_string($reachability) ? json_decode($reachability, true) : (array) $reachability;
+            Log::info("Decoding reachability for {$res->phone}: " . json_encode($reachArray));
 
-            Log::info("Responder {$res->phone} - Lat: $rLat, Lng: $rLng, Distance: $distance");
+            $isReachable = $reachArray['result']['reachable'] ?? $reachArray['reachable'] ?? false; 
+
+            $connectivityArray = $reachArray['result']['connectivity'] ?? $reachArray['connectivity'] ?? [];
+            $connType = $connectivityArray[0] ?? 'OFFLINE';
+            $uiStatus = 'Offline';
+            if ($isReachable === true || $isReachable === 'true') {
+                $uiStatus = (strtoupper($connType) === 'DATA') ? 'Online' : 'SMS Only';
+            }
+
+            Log::info("Final Mapping for {$res->phone}: Status: $uiStatus, Conn: $connType");
 
             return [
                 'id'          => $res->id,
                 'name'        => "{$res->given_name} {$res->family_name}",
                 'role'        => $res->role ?? 'VHT Responder',
                 'distance'    => $distance,
-                'status'      => (data_get($reachArray, 'result.reachable') ?? false) ? 'Online' : 'Offline',
-                'connectivity'=> data_get($reachArray, 'result.connectivity.0') ?? 'Cellular',
+                'status'      => $uiStatus,
+                'connectivity'=> $connType,
                 'phone'       => $res->phone,
                 'latitude'    => $rLat,
                 'longitude'   => $rLng,

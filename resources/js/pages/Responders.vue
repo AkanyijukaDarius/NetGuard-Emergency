@@ -114,13 +114,10 @@ import { useResponderStore } from '../stores/responder'
 
 const responderStore = useResponderStore()
 const searchQuery = ref('')
-const isManualRefreshing = ref(false) // Local state for arrow spin
+const isManualRefreshing = ref(false)
 let pollingTimer = null
 
-/**
- * Silent Polling: Runs in the background every 20 seconds.
- * Does NOT trigger the spinning icon.
- */
+
 const startPolling = () => {
   pollingTimer = setInterval(async () => {
     if (!responderStore.isProbing) {
@@ -129,10 +126,7 @@ const startPolling = () => {
   }, 20000);
 }
 
-/**
- * Manual Refresh: Triggered by user tapping the refresh icon.
- * Shows the spinning animation and a toast notification.
- */
+
 const manualRefresh = async () => {
   if (isManualRefreshing.value) return;
 
@@ -165,23 +159,64 @@ const onlineCount = computed(() => {
 });
 
 const getStatusClass = (status) => {
-  const base = "text-xs px-3 py-1 rounded-full transition-colors duration-500 ";
+  const base = "text-xs px-3 py-1 rounded-full ";
   if (status === 'Online') return base + "bg-green-100 text-green-700";
   if (status === 'SMS Only') return base + "bg-orange-100 text-orange-700";
   return base + "bg-gray-100 text-gray-500";
 };
 
 const viewResponder = (responder) => {
+  const phoneNumber = responder.phone;
+
   f7.dialog.create({
     title: responder.name,
-    text: `Status: ${responder.status}\nDistance: ${responder.distance ?? 'Unknown'} km\nConnectivity: ${responder.connectivity || 'N/A'}`,
+    content: `
+      <div class="list no-hairlines-md" style="margin: 0;">
+        <ul>
+          <li class="item-content" style="padding-left: 0;">
+            <div class="item-inner">
+              <div class="item-title text-gray-500">Status</div>
+              <div class="item-after font-bold">${responder.status}</div>
+            </div>
+          </li>
+            <li class="item-content" style="padding-left: 0;">
+            <div class="item-inner">
+              <div class="item-title text-gray-500">Connectivity</div>
+              <div class="item-after font-bold">${responder.connectivity}</div>
+            </div>
+          </li>
+          <li class="item-content" style="padding-left: 0;">
+            <div class="item-inner">
+              <div class="item-title text-gray-500">Distance</div>
+              <div class="item-after font-bold">${responder.distance ?? '—'} km</div>
+            </div>
+          </li>
+          <li class="item-content" style="padding-left: 0;">
+            <div class="item-inner">
+              <div class="item-title text-gray-500">Phone</div>
+              <div class="item-after font-mono">${phoneNumber || 'Not available'}</div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    `,
     buttons: [
       {
-        text: 'Call Now',
+        text: 'Call Responder',
+        bold: true,
         color: 'green',
-        onClick: () => window.open(`tel:${responder.phone}`)
+        onClick: () => {
+          if (phoneNumber) {
+            window.location.href = `tel:${phoneNumber}`;
+          } else {
+            f7.toast.create({ text: 'No phone number available', closeTimeout: 2000 }).open();
+          }
+        }
       },
-      { text: 'Close', close: true }
+      {
+        text: 'Close',
+        close: true
+      }
     ]
   }).open();
 };
