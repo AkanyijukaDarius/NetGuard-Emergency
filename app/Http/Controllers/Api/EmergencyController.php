@@ -19,6 +19,7 @@ use App\Events\EmergencyTriggered;
 use App\Events\EmergencyCancelled;
 use App\Events\ResponderDispatched;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Http;
 
 class EmergencyController extends Controller
 {
@@ -71,46 +72,39 @@ class EmergencyController extends Controller
     }
 
 
-    public function verifyKyc(Request $request)
+
+public function verifyKyc(Request $request)
 {
     $user = $request->user();
 
-    $result = $this->camara->kycMatch($user->phone, [
+    $response = Http::withHeaders([
+        'x-rapidapi-host' => 'network-as-code.nokia.rapidapi.com',
+        'x-rapidapi-key'  => config('services.nokia.api_key'),
+    ])->post(config('services.nokia.base_url') . '/passthrough/camara/v1/kyc-match/kyc-match/v0.3/match', [
+        'device' => ['phoneNumber' => $user->phone],
         'idDocument' => $user->id_document,
         'givenName'  => $user->given_name,
         'familyName' => $user->family_name,
     ]);
 
-    $idMatches = $result['idDocumentMatch'] ?? false;
+    $result = $response->json();
 
-    if ( $idMatches) {
-        $user->update([
-            'is_kyc_verified' => true,
-            'kyc_status'      => 'verified'
-        ]);
+    $idMatches = isset($result['idDocumentMatch']) && $result['idDocumentMatch'] === "true";
+
+    if ($response->successful() && $idMatches) {
+        $user->update(['is_kyc_verified' => true,
+            'kyc_status'      => 'verified']);
 
         return response()->json([
             'success' => true,
-            'is_verified' => true,
-            'message' => 'Identity confirmed by Network Provider.'
+            'message' => 'Identity Verified via ID Document!'
         ]);
     }
 
-    Log::warning("KYC Verification Failed for User {$user->id}", [
-        'phone' => $user->phone,
-        'id_match' => $idMatches,
-        'raw_result' => $result
-    ]);
-
-    $user->update(['kyc_status' => 'failed']);
-
     return response()->json([
         'success' => false,
-        'is_verified' => false,
-        'message' => 'Identity mismatch. The ID Number provided does not match the SIM card registration.',
-        'details' => [
-            'id_match' => $idMatches ? 'Valid' : 'Invalid/Mismatch',
-        ]
+        'message' => 'ID Verification Failed.',
+        'debug' => $result
     ], 422);
 }
 
